@@ -1,16 +1,17 @@
 
 from synpick.object_models import load_gripper, load_tote, load_meshes
-from synpick.scene import create_scene
+from synpick.scene import create_scene, CAMERA_POSES
 from synpick.output import Writer
 
 from pathlib import Path
 from typing import Optional
+from contextlib import ExitStack
 import random
 import stillleben as sl
 import torch
 import json
 
-def run(out : Path, ibl_path : Path, visualize : bool = False):
+def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False):
 
     meshes = load_meshes()
 
@@ -63,8 +64,14 @@ def run(out : Path, ibl_path : Path, visualize : bool = False):
 
     frame_idx = 0
 
+    # Create an output writer for each camera pose
+    writers = [ Writer(out / f'{start_index+i:06}') for i in range(len(CAMERA_POSES)) ]
+
     # Generate sequence!
-    with Writer(out) as writer:
+    with ExitStack() as stack:
+        for writer in writers:
+            stack.enter_context(writer)
+
         for wp in waypoints:
             while True:
                 delta = wp - gripper_pose[:3,3]
@@ -81,8 +88,10 @@ def run(out : Path, ibl_path : Path, visualize : bool = False):
                 sim.step(gripper_pose, DT)
 
                 if frame_idx % STEPS_PER_FRAME == 0:
-                    result = renderer.render(scene)
-                    writer.write_frame(scene, result)
+                    for writer, camera_pose in zip(writers, CAMERA_POSES):
+                        scene.set_camera_pose(camera_pose)
+                        result = renderer.render(scene)
+                        writer.write_frame(scene, result)
 
                 frame_idx += 1
 
@@ -96,9 +105,11 @@ if __name__ == "__main__":
         help='Directory containing sIBL maps')
     parser.add_argument('--out', metavar='PATH', type=str, required=True,
         help='Output frame directory (should not exist)')
+    parser.add_argument('--base', metavar='N', type=int, required=True,
+        help='Number of first output sequence')
     parser.add_argument('--viewer', action='store_true')
 
     args = parser.parse_args()
 
     sl.init_cuda()
-    run(out=Path(args.out), ibl_path=Path(args.ibl), visualize=args.viewer)
+    run(out=Path(args.out), start_index=args.base, ibl_path=Path(args.ibl), visualize=args.viewer)

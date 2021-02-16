@@ -21,5 +21,5 @@ Running
 -------
 
 ```bash
-python synpick/generate_moving.py --out output/test --ibl external_data/Chiricahua_Plaza/Chiricahua_Plaza.ibl
+python synpick/generate_moving.py --ibl external_data/ibl/Siggraph2007_UpperFloor/Siggraph2007_UpperFloor.ibl --out output/synpick/train --base 0
 ```
