@@ -40,6 +40,36 @@ class Writer(object):
         self.gt_file.write('\n}')
         self.gt_file.close()
 
+    @staticmethod
+    def intrinsicMatrixFromProjection(proj : torch.tensor, W : int, H : int):
+        far = -proj[2,3] / (proj[2,2] - 1.0)
+        near = (proj[2,2] - 1.0) / (proj[2,2] + 1.0) * far
+        left = -near * (proj[0,2]+1) / proj[0,0]
+        right = -near * (proj[0,2]-1) / proj[0,0]
+        bottom = -near * (proj[1,2]-1) / proj[1,1]
+        top = -near * (proj[1,2]+1) / proj[1,1]
+
+        eps = 2.2204460492503131e-16
+
+        if abs(left-right) < eps:
+            cx = W * 0.5
+        else:
+            cx = (left * W) / (left - right)
+
+        if abs(top-bottom) < eps:
+            cy = H * 0.5
+        else:
+            cy = (top * H) / (top - bottom)
+
+        fx = -near * cx / left
+        fy = -near * cy / top
+
+        return torch.tensor([
+            [fx, 0.0, cx],
+            [0.0, fy, cy],
+            [0.0, 0.0, 1.0]
+        ])
+
     def write_frame(self, scene : sl.Scene, result : sl.RenderPassResult):
 
         # TODO: Augmentation?
@@ -54,12 +84,7 @@ class Writer(object):
         P = scene.projection_matrix()
         W,H = scene.viewport
 
-        glToCV = torch.tensor([
-            [W/2.0, 0.0, W/2.0],
-            [0.0, H/2.0, H/2.0],
-            [0.0, 0.0, 1.0]
-        ])
-        cam_K = glToCV @ P[:3,:3]
+        cam_K = Writer.intrinsicMatrixFromProjection(P, W, H)
 
         world_in_camera = torch.inverse(scene.camera_pose())
 

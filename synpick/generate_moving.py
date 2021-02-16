@@ -63,6 +63,7 @@ def run(out : Path, ibl_path : Path, visualize : bool = False):
 
     frame_idx = 0
 
+    # Generate sequence!
     with Writer(out) as writer:
         for wp in waypoints:
             while True:
