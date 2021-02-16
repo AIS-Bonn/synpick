@@ -1,30 +1,26 @@
 
 from synpick.object_models import load_gripper, load_tote, load_meshes
 from synpick.scene import create_scene
-from synpick.output_frame import write_frame
+from synpick.output import Writer
 
 from pathlib import Path
 from typing import Optional
 import random
 import stillleben as sl
 import torch
+import json
 
 def run(out : Path, ibl_path : Path, visualize : bool = False):
-
-    # Create output directory
-    out.mkdir(parents=True)
-
-    (out / 'rgb').mkdir()
-    (out / 'mask_visib').mkdir()
-    (out / 'depth').mkdir()
 
     meshes = load_meshes()
 
     scene = create_scene(ibl_path)
 
+    depth_scale = 0.1
+
     # Add meshes
     volume = 0
-    while volume < 10.0 / 1000.0:
+    while volume < 7.0 / 1000.0:
         mesh = random.choice(meshes)
 
         obj = sl.Object(mesh)
@@ -66,29 +62,28 @@ def run(out : Path, ibl_path : Path, visualize : bool = False):
     STEPS_PER_FRAME = int(round((1.0 / 24) / DT))
 
     frame_idx = 0
-    out_frame_idx = 0
 
-    for wp in waypoints:
-        while True:
-            delta = wp - gripper_pose[:3,3]
+    with Writer(out) as writer:
+        for wp in waypoints:
+            while True:
+                delta = wp - gripper_pose[:3,3]
 
-            dn = delta.norm()
+                dn = delta.norm()
 
-            if dn < GRIPPER_VELOCITY*DT + 0.001:
-                break
+                if dn < GRIPPER_VELOCITY*DT + 0.001:
+                    break
 
-            delta = delta / dn * GRIPPER_VELOCITY*DT
+                delta = delta / dn * GRIPPER_VELOCITY*DT
 
-            gripper_pose[:3,3] += delta
+                gripper_pose[:3,3] += delta
 
-            sim.step(gripper_pose, DT)
+                sim.step(gripper_pose, DT)
 
-            if frame_idx % STEPS_PER_FRAME == 0:
-                result = renderer.render(scene)
-                write_frame(out, out_frame_idx, scene, result)
-                out_frame_idx += 1
+                if frame_idx % STEPS_PER_FRAME == 0:
+                    result = renderer.render(scene)
+                    writer.write_frame(scene, result)
 
-            frame_idx += 1
+                frame_idx += 1
 
     print('Finished')
 
