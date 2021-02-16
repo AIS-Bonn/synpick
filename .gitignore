@@ -1,2 +1,7 @@
 external_data/
-
+imgui.ini
+meshes/*.sl_mesh
+output/
+*.kdev4*
+*.egg-info
+__pycache__
