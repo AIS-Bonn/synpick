@@ -5,12 +5,13 @@ Setup scene parameters
 
 import stillleben as sl
 import torch
+import math
 from pathlib import Path
 
 from .object_models import load_tote
 
-RESOLUTION = (640, 480)
-INTRINSICS = (1066.778, 1067.487, 312.9869, 241.3109)
+RESOLUTION = (1920, 1080)
+FOV_X = 35.0 * math.pi / 180.0
 
 TOTE_DIM = torch.tensor([0.615 + 0.1, 0.373 + 0.2, 0.2])
 CAMERA_POSITIONS = [
@@ -52,7 +53,7 @@ CAMERA_POSES = [ camPoseFromPosition(p) for p in CAMERA_POSITIONS ]
 def create_scene(ibl_path : Path):
     # Create a scene with specified intrinsics
     scene = sl.Scene(RESOLUTION)
-    scene.set_camera_intrinsics(*INTRINSICS)
+    scene.set_camera_hfov(FOV_X)
 
     # Add red plastic tote
     tote_obj = sl.Object(load_tote())
