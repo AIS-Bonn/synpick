@@ -4,7 +4,7 @@ from synpick.object_models import load_gripper, load_tote, load_meshes, OBJECT_N
 from synpick.scene import create_scene, CAMERA_POSES
 from synpick.output import Writer
 from synpick.gripper_sim import GripperSim
-from synpick.picking_heuristic import postprocess_segmentation, visualize_detections
+from synpick.picking_heuristic import postprocess_segmentation, visualize_detections, postprocess_with_depth, process_detections
 
 from pathlib import Path
 from typing import Optional
@@ -19,6 +19,7 @@ from PIL import Image
 def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False):
 
     meshes = load_meshes()
+    mesh_pool = list(meshes)
 
     object_sizes = torch.stack(
         [torch.zeros(3)] + \
@@ -33,7 +34,8 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
     # Add meshes
     volume = 0
     while volume < 7.0 / 1000.0:
-        mesh = random.choice(meshes)
+        mesh = random.choice(mesh_pool)
+        mesh_pool.remove(mesh)
 
         obj = sl.Object(mesh)
         obj.instance_index = len(scene.objects)+1
@@ -95,10 +97,20 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
                 object_sizes=object_sizes,
                 object_weights=object_weights
             )
+            postprocess_with_depth(
+                detections=detections,
+                segmentation=segmentation,
+                confidence=torch.ones_like(segmentation),
+                classes=OBJECT_NAMES,
+                cloud=result.cam_coordinates()[:,:,:3],
+                object_sizes=object_sizes,
+            )
 
             vis = visualize_detections(result.rgb()[:,:,:3], detections, True)
             Image.fromarray(result.rgb()[:,:,:3].cpu().numpy()).save('/tmp/rgb.png')
             Image.fromarray(vis.numpy()).save('/tmp/vis.png')
+
+            process_detections(detections)
 
             print(detections)
 
