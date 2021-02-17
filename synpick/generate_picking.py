@@ -112,12 +112,25 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
 
             process_detections(detections)
 
-            print(detections)
+            if len(detections) == 0:
+                print("Empty!")
+                break
+
+            objectName = detections[0].name
+            goalPixel = detections[0].suction_point
+            print(f"I'm going to pick {objectName} at {goalPixel.tolist()}")
+
+            coord = result.cam_coordinates()[goalPixel[1], goalPixel[0]].cpu()
+            normal = result.normals()[goalPixel[1], goalPixel[0], :3].cpu()
+            print(f"Camera-space coords: {coord.tolist()}, normal: {normal.tolist()}")
+
+            coord = scene.camera_pose() @ coord
+            normal = scene.camera_pose()[:3,:3] @ normal
+
+            print(f"World-space coords: {coord.tolist()}, normal: {normal.tolist()}")
 
             # restore gripper pose
             gripper.set_pose(saved_gripper_pose)
-
-            return
 
             if frame_idx % STEPS_PER_FRAME == 0:
                 for writer, camera_pose in zip(writers, CAMERA_POSES):

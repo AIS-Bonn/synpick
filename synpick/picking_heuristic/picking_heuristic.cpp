@@ -10,6 +10,8 @@
 
 #include <stack>
 
+#include <pybind11/stl_bind.h>
+
 #include "pole_of_inaccessibility.h"
 
 #include "graph/graph.h"
@@ -93,7 +95,7 @@ std::vector<Detection> postprocessSegmentation(const cv::Mat_<uint8_t>& segmenta
 
         if(stats.rows <= 1)
         {
-            printf("No pixels for class '%s'\n", classes[classIdx].c_str());
+//             printf("No pixels for class '%s'\n", classes[classIdx].c_str());
             continue;
         }
 
@@ -204,7 +206,7 @@ std::vector<Detection> postprocessSegmentation(const cv::Mat_<uint8_t>& segmenta
         {
             if(midFactor > distFactor)
             {
-                printf("Using between point as suction point\n");
+//                 printf("Using between point as suction point\n");
                 det.suctionPoint = mid;
             }
         }
@@ -410,13 +412,13 @@ void postprocessWithDepth(std::vector<Detection>* detections, const cv::Mat_<uin
             if(unknownClass != static_cast<graph::VertexID>(-1) && segmCode == unknownClass + 1)
                 continue;
 
-            if(segmCode == boxClass + 1)
+            if(segmCode == boxClass)
             {
                 boxHit++;
                 continue;
             }
 
-            if(myClass != static_cast<graph::VertexID>(-1) && segmCode == myClass + 1)
+            if(myClass != static_cast<graph::VertexID>(-1) && segmCode == myClass)
                 continue;
 
             float myConfidence = confidence(myPoint.y, myPoint.x);
@@ -428,7 +430,7 @@ void postprocessWithDepth(std::vector<Detection>* detections, const cv::Mat_<uin
             const Detection* theirDetection = 0;
             for(auto& det : *detections)
             {
-                if(det.object == classes[segmCode - 1])
+                if(det.object == classes[segmCode])
                 {
                     theirDetection = &det;
                     break;
@@ -455,7 +457,7 @@ void postprocessWithDepth(std::vector<Detection>* detections, const cv::Mat_<uin
                 continue;
 
             float myDepth = cloudAcc[myPoint.y][myPoint.x][2];
-            float depth = cloudAcc[theirPoint.y][theirPoint.x][0];
+            float depth = cloudAcc[theirPoint.y][theirPoint.x][2];
 
             if(!std::isfinite(myDepth) || !std::isfinite(depth))
                 continue;
@@ -469,6 +471,7 @@ void postprocessWithDepth(std::vector<Detection>* detections, const cv::Mat_<uin
             if(depth - graspPoint[myClass].z() > 0.02)
                 centroidPrior = 0.1;
 
+//             printf("depth: %f, myDepth: %f\n", depth, myDepth);
             if(depth > myDepth)
             {
                 // The other object is further downwards
@@ -482,13 +485,13 @@ void postprocessWithDepth(std::vector<Detection>* detections, const cv::Mat_<uin
 
                 if(segmCode > 0 && segmCode <= classes.size())
                 {
-                    countBelowPerClass[segmCode - 1]++;
-                    sumBelowPerClass[segmCode - 1] += centroidPrior * theirConfidence * myConfidence;
+                    countBelowPerClass[segmCode]++;
+                    sumBelowPerClass[segmCode] += centroidPrior * theirConfidence * myConfidence;
                 }
             }
         }
 
-//         ROS_DEBUG("Object %s is %u above and %u below (%u box, %u oob). Per class:", detection.object.c_str(), countAbove, countBelow, boxHit, outOfBounds);
+//         printf("Object %s is %u above and %u below (%u box, %u oob). Per class:\n", detection.object.c_str(), countAbove, countBelow, boxHit, outOfBounds);
         for(std::size_t i = 0; i < classes.size(); ++i)
         {
             if(countBelowPerClass[i] < 10)
@@ -501,7 +504,7 @@ void postprocessWithDepth(std::vector<Detection>* detections, const cv::Mat_<uin
                 continue;
 
             G.addEdge(i, myClass, sumBelowPerClass[i]);
-//             ROS_DEBUG(" - %s is %f above", classes[i].c_str(), sumBelowPerClass[i]);
+//             printf(" - %s is %f above\n", classes[i].c_str(), sumBelowPerClass[i]);
         }
 
         detection.occlusionFactor = static_cast<double>(countAbove) / (countAbove + countBelow);
@@ -921,12 +924,11 @@ void processDetections(std::vector<Detection>& detections)
         else
             return aboveA < aboveB;
     });
+    detections.resize(std::min<std::size_t>(detections.size(), std::max<std::size_t>(3, detections.size() / 2)));
 
     printf("Surviving items after area check:\n");
-    for(std::size_t j = 0; j < std::min<std::size_t>(detections.size(), std::max<std::size_t>(3, detections.size() / 2)); ++j)
+    for(auto& d : detections)
     {
-        auto& d = detections[j];
-
         printf("  item '%20s' confidence=%.3f visible_surface_factor=%.3f above=%3d\n",
             d.object.c_str(), d.confidence, d.visibleAreaFactor, d.totalObjectsAbove);
     }
@@ -936,6 +938,8 @@ void processDetections(std::vector<Detection>& detections)
 
 // Python bindings
 
+PYBIND11_MAKE_OPAQUE(std::vector<arc_perception::Detection>);
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     py::class_<arc_perception::Detection>(m, "Detection")
         .def("__str__", [&](arc_perception::Detection& det){
@@ -943,9 +947,17 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         })
         .def("__repr__", [&](arc_perception::Detection& det){
             return "Detection('" + det.object + "')";
-        });
+        })
+        .def_property_readonly("name", [](const arc_perception::Detection& det){
+            return det.object;
+        })
+        .def_property_readonly("suction_point", [](const arc_perception::Detection& det){
+            return torch::tensor({det.suctionPoint.x, det.suctionPoint.y});
+        })
+    ;
+    py::bind_vector<std::vector<arc_perception::Detection>>(m, "DetectionList");
 
-    m.def("postprocess_segmentation", [&](
+    m.def("postprocess_segmentation", [](
         at::Tensor& segmentation, at::Tensor& confidence,
         const std::vector<std::string>& classes, at::Tensor& objectSizes, std::vector<double>& objectWeights)
     {
@@ -975,7 +987,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("object_sizes"), py::arg("object_weights"));
 
     m.def("postprocess_with_depth", [&](
-        std::vector<arc_perception::Detection>& detections,
+        std::vector<arc_perception::Detection>* detections,
         at::Tensor& segmentation, at::Tensor& confidence,
         const std::vector<std::string>& classes,
         at::Tensor& cloud,
@@ -1000,7 +1012,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
         at::Tensor cloudCPU = cloud.cpu();
         arc_perception::postprocessWithDepth(
-            &detections, cvSegm, cvConf, classes, cloudCPU, cvObjectSizes
+            detections, cvSegm, cvConf, classes, cloudCPU, cvObjectSizes
         );
     },
         py::arg("detections"),
