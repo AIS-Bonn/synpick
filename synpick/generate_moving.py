@@ -2,6 +2,7 @@
 from synpick.object_models import load_gripper, load_tote, load_meshes
 from synpick.scene import create_scene, CAMERA_POSES
 from synpick.output import Writer
+from synpick.gripper_sim import GripperSim
 
 from pathlib import Path
 from typing import Optional
@@ -53,7 +54,7 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
     gripper_pose = torch.eye(4)
     gripper_pose[:3,3] = waypoints[0]
     gripper_pose[2,3] = 0.5
-    sim = sl.ManipulationSim(scene, gripper, gripper_pose)
+    sim = GripperSim(scene, gripper, gripper_pose)
     sim.set_spring_parameters(1000.0, 1.0, 30.0)
 
     renderer = sl.RenderPass()

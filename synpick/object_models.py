@@ -28,10 +28,14 @@ def load_meshes():
     return meshes
 
 def load_tote():
-    return sl.Mesh('meshes/tote.glb')
+    tote = sl.Mesh('meshes/tote.glb')
+    tote.class_index = 0
+    return tote
 
 def load_gripper():
-    return sl.Mesh('meshes/gripper.glb', flags=sl.Mesh.Flag.PHYSICS_FORCE_CONVEX_HULL)
+    gripper = sl.Mesh('meshes/gripper.glb', flags=sl.Mesh.Flag.PHYSICS_FORCE_CONVEX_HULL)
+    gripper.class_index = 0
+    return gripper
 
 if __name__ == "__main__":
     sl.init()
