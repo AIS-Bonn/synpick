@@ -16,6 +16,27 @@ import json
 
 from PIL import Image
 
+def compute_grasp_frame(position, normal):
+    zAxis = normal
+    xAxis = torch.cross(torch.tensor([1.0,0.0,0.0]), zAxis)
+    xAxis /= xAxis.norm()
+
+    yAxis = torch.cross(zAxis, xAxis)
+    yAxis /= yAxis.norm()
+
+    T = torch.eye(4)
+    T[:3,0] = xAxis
+    T[:3,1] = yAxis
+    T[:3,2] = zAxis
+    T[:3,3] = position
+
+    return T
+
+def translation(x, y, z):
+    T = torch.eye(4)
+    T[:3,3] = torch.tensor([x,y,z])
+    return T
+
 def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False):
 
     meshes = load_meshes()
@@ -51,18 +72,18 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
     gripper = sl.Object(load_gripper())
     gripper.metallic = 0.01
     gripper.roughness = 0.9
-    gripper.linear_velocity_limit = 0.06
 
     # Manipulation simulation
     gripper_pose = torch.eye(4)
     #gripper_pose[:3,3] = waypoints[0]
     gripper_pose[2,3] = 0.5
     sim = GripperSim(scene, gripper, gripper_pose)
-    sim.set_spring_parameters(1000.0, 1.0, 30.0)
+    sim.set_spring_parameters(2500.0, 2.0, 90.0)
 
     renderer = sl.RenderPass()
 
-    GRIPPER_VELOCITY = 0.1
+    GRIPPER_VELOCITY = 0.5
+    gripper.linear_velocity_limit = 2.0 * GRIPPER_VELOCITY
     DT = 0.002
     STEPS_PER_FRAME = int(round((1.0 / 24) / DT))
 
@@ -73,6 +94,34 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
 
     gripper_out_of_way = torch.eye(4)
     gripper_out_of_way[2,3] = 10.0
+
+    def move_gripper_to(pos, vel=GRIPPER_VELOCITY):
+        nonlocal frame_idx
+        nonlocal gripper_pose
+
+        print(f'Moving to {pos.tolist()}')
+
+        while True:
+            delta = pos - gripper_pose[:3,3]
+
+            dn = delta.norm()
+
+            if dn < vel*DT + 0.001:
+                break
+
+            delta = delta / dn * vel*DT
+
+            gripper_pose[:3,3] += delta
+
+            sim.step(gripper_pose, DT)
+
+            if frame_idx % STEPS_PER_FRAME == 0:
+                for writer, camera_pose in zip(writers, CAMERA_POSES):
+                    scene.set_camera_pose(camera_pose)
+                    result = renderer.render(scene)
+                    writer.write_frame(scene, result)
+
+            frame_idx += 1
 
     # Generate sequence!
     with ExitStack() as stack:
@@ -129,16 +178,33 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
 
             print(f"World-space coords: {coord.tolist()}, normal: {normal.tolist()}")
 
-            # restore gripper pose
-            gripper.set_pose(saved_gripper_pose)
+            graspFrame = compute_grasp_frame(coord[:3], normal)
 
-            if frame_idx % STEPS_PER_FRAME == 0:
-                for writer, camera_pose in zip(writers, CAMERA_POSES):
-                    scene.set_camera_pose(camera_pose)
-                    result = renderer.render(scene)
-                    writer.write_frame(scene, result)
+            above = graspFrame @ translation(0.0, 0.0, 1.0)
+            close = graspFrame @ translation(0.0, 0.0, 0.05)
+            gripper_pose[:] = above
 
-            frame_idx += 1
+            # 1) MOVEMENT: from pose above to grasp frame
+            sim.reset_pose_to(gripper_pose)
+
+            move_gripper_to(close[:3,3], vel=1.0)
+            move_gripper_to(graspFrame[:3,3], vel=0.1)
+
+            # 2) SUCTION
+            print(f"Arrived at object!")
+            sim.enable_suction(100.0, 0.2)
+
+            # 3) MOVEMENT: Back out
+            move_gripper_to(above[:3,3])
+
+            print(f"Back above")
+
+            got_objects = sim.disable_suction()
+
+            print(f"I got:")
+            for obj in got_objects:
+                print(f" - {OBJECT_NAMES[obj.mesh.class_index]}")
+                #scene.remove_object(obj)
 
     print('Finished')
 

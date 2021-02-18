@@ -16,8 +16,8 @@ FOV_X = 35.0 * math.pi / 180.0
 TOTE_DIM = torch.tensor([0.615 + 0.1, 0.373 + 0.2, 0.2])
 CAMERA_POSITIONS = [
     torch.tensor([0, 0, 1.3]),
-    torch.tensor([-TOTE_DIM[0]/2, 0, 1.2]),
-    torch.tensor([TOTE_DIM[0]/2,  0, 1.2]),
+    #torch.tensor([-TOTE_DIM[0]/2, 0, 1.2]),
+    #torch.tensor([TOTE_DIM[0]/2,  0, 1.2]),
     torch.tensor([0,  TOTE_DIM[1]/2, 1.2]),
     torch.tensor([0, -TOTE_DIM[2]/2, 1.2])
 ]
