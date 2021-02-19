@@ -132,9 +132,18 @@ public:
             scene->raycast(origin, unitDir, MAX_DISTANCE, hit);
             auto hitPositionInWorld = hit.block.position;
 
-            auto object = reinterpret_cast<sl::Object*>(hit.block.actor->userData);
-            if(!hit.hasBlock || !object || object->isStatic())
+            if(!hit.hasBlock)
+            {
                 rayMissed++;
+                continue;
+            }
+
+            auto object = reinterpret_cast<sl::Object*>(hit.block.actor->userData);
+            if(!object || object->isStatic())
+            {
+                rayMissed++;
+                continue;
+            }
 
             if(object == m_gripper.get())
                 throw std::runtime_error{"Hit myself with raycast, that should not happen"};
