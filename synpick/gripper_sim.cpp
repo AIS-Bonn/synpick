@@ -51,6 +51,13 @@ public:
         setSpringParameters(600.0f, 0.1f, 60.0f);
     }
 
+    ~GripperSim()
+    {
+        // PhysX is strange.
+        m_joint->release();
+        m_joint.release();
+    }
+
     GripperSim(const GripperSim&) = delete;
     GripperSim& operator=(const GripperSim&) = delete;
 
@@ -197,6 +204,12 @@ public:
             }
         }
 
+        // PhysX is strange.
+        for(auto& joint : m_graspedObjectJoints)
+        {
+            joint->release();
+            joint.release();
+        }
         m_graspedObjectJoints.clear();
 
         return objects;
