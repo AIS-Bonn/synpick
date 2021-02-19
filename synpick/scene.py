@@ -11,19 +11,19 @@ from pathlib import Path
 from .object_models import load_tote
 
 RESOLUTION = (1920, 1080)
-FOV_X = 35.0 * math.pi / 180.0
+FOV_X = 20.0 * math.pi / 180.0
 
 TOTE_DIM = torch.tensor([0.615 + 0.1, 0.373 + 0.2, 0.2])
 CAMERA_POSITIONS = [
-    torch.tensor([0, 0, 1.3]),
+    torch.tensor([0, 0, 2.0]),
     #torch.tensor([-TOTE_DIM[0]/2, 0, 1.2]),
     #torch.tensor([TOTE_DIM[0]/2,  0, 1.2]),
-    torch.tensor([0,  TOTE_DIM[1]/2, 1.2]),
-    torch.tensor([0, -TOTE_DIM[2]/2, 1.2])
+    torch.tensor([0,  TOTE_DIM[1], 2.0]),
+    torch.tensor([0, -TOTE_DIM[1], 2.0])
 ]
 
 def camPoseFromPosition(p):
-    lookAt = torch.zeros(3)
+    lookAt = torch.tensor([0.0, 0.0, 0.8*TOTE_DIM[2]])
 
     up = -p
     up[2] = 0.0
