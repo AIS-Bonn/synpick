@@ -1,6 +1,8 @@
 
 #include <torch/extension.h>
 
+#include <Magnum/Math/Angle.h>
+
 #include <Corrade/Utility/DebugStl.h>
 
 #include <stillleben/context.h>
@@ -15,40 +17,78 @@
 using namespace Magnum;
 using namespace physx;
 using namespace sl::python;
+using namespace Math::Literals;
+
+namespace
+{
+    const Matrix4 TIP_POSE = Matrix4::translation({0.0f, 0.0f, 0.052f});
+}
 
 class GripperSim
 {
 public:
     explicit GripperSim(
         const std::shared_ptr<sl::Scene>& scene,
-        const std::shared_ptr<sl::Object>& gripper,
+        const std::shared_ptr<sl::Object>& gripperBase,
+        const std::shared_ptr<sl::Object>& gripperCup,
         const Magnum::Matrix4& initialPose
     )
      : m_scene{scene}
-     , m_gripper{gripper}
-     , m_initialPose{initialPose}
+     , m_gripperBase{gripperBase}
+     , m_gripperCup{gripperCup}
     {
         // Make sure the object is added to the scene
-        if(std::find(scene->objects().begin(), scene->objects().end(), m_gripper) == scene->objects().end())
-            scene->addObject(m_gripper);
-
-        m_gripper->setPose(initialPose);
+        if(std::find(scene->objects().begin(), scene->objects().end(), m_gripperBase) == scene->objects().end())
+            scene->addObject(m_gripperBase);
+        if(std::find(scene->objects().begin(), scene->objects().end(), m_gripperBase) == scene->objects().end())
+            scene->addObject(m_gripperCup);
 
         scene->loadPhysics();
 
         auto& physics = m_scene->context()->physxPhysics();
 
+        Matrix4 jointFrame = Matrix4::rotationY(-90.0_degf);
+
         // Add a 6D joint which we use to control the manipulator
         m_joint.reset(PxD6JointCreate(physics,
-            nullptr, PxTransform{initialPose}, // at current pose relative to world (null)
-            &m_gripper->rigidBody(), PxTransform{PxIDENTITY::PxIdentity} // in origin of manipulator
+            nullptr, PxTransform{jointFrame}, // at current pose relative to world (null)
+            &m_gripperBase->rigidBody(), PxTransform{jointFrame} // in origin of manipulator
         ));
 
-        // By default rotation is locked
-        lockRotationAxes(true, true, true);
+        m_joint->setMotion(PxD6Axis::eX, PxD6Motion::eFREE);
+        m_joint->setMotion(PxD6Axis::eY, PxD6Motion::eFREE);
+        m_joint->setMotion(PxD6Axis::eZ, PxD6Motion::eFREE);
+        m_joint->setMotion(PxD6Axis::eTWIST, PxD6Motion::eLOCKED);
+        m_joint->setMotion(PxD6Axis::eSWING1, PxD6Motion::eLOCKED);
+        m_joint->setMotion(PxD6Axis::eSWING2, PxD6Motion::eLOCKED);
+
+        // Add a 6D joint for the cup
+        m_cupJoint.reset(PxD6JointCreate(physics,
+            &m_gripperBase->rigidBody(), PxTransform{PxIDENTITY::PxIdentity},
+            &m_gripperCup->rigidBody(), PxTransform{PxIDENTITY::PxIdentity}
+        ));
+
+        m_cupJoint->setMotion(PxD6Axis::eX, PxD6Motion::eLOCKED);
+        m_cupJoint->setMotion(PxD6Axis::eY, PxD6Motion::eLOCKED);
+        m_cupJoint->setMotion(PxD6Axis::eZ, PxD6Motion::eLOCKED);
+        m_cupJoint->setMotion(PxD6Axis::eTWIST, PxD6Motion::eLIMITED);
+        m_cupJoint->setMotion(PxD6Axis::eSWING1, PxD6Motion::eLOCKED);
+        m_cupJoint->setMotion(PxD6Axis::eSWING2, PxD6Motion::eLOCKED);
+        m_cupJoint->setTwistLimit(PxJointAngularLimitPair(-M_PI/2.0, M_PI/2.0));
+
+        m_cupJoint->setDrive(PxD6Drive::eTWIST, PxD6JointDrive(2500.0, 200.0, 200.0));
 
         // Setup default spring parameters
         setSpringParameters(600.0f, 0.1f, 60.0f);
+
+        // HACK: Disable collisions on the base mesh
+        // TODO: Solve this using a simulation callback filter
+        std::array<PxShape*, 100> shapes;
+        int num = m_gripperBase->rigidBody().getShapes(shapes.data(), shapes.size());
+        for(int i = 0; i < num; ++i)
+        {
+            shapes[i]->setFlag(PxShapeFlag::eSIMULATION_SHAPE, false);
+        }
     }
 
     ~GripperSim()
@@ -56,20 +96,13 @@ public:
         // PhysX is strange.
         m_joint->release();
         m_joint.release();
+
+        m_cupJoint->release();
+        m_cupJoint.release();
     }
 
     GripperSim(const GripperSim&) = delete;
     GripperSim& operator=(const GripperSim&) = delete;
-
-    void lockRotationAxes(bool x, bool y, bool z)
-    {
-        m_joint->setMotion(PxD6Axis::eX, PxD6Motion::eFREE);
-        m_joint->setMotion(PxD6Axis::eY, PxD6Motion::eFREE);
-        m_joint->setMotion(PxD6Axis::eZ, PxD6Motion::eFREE);
-        m_joint->setMotion(PxD6Axis::eTWIST, x ? PxD6Motion::eLOCKED : PxD6Motion::eFREE);
-        m_joint->setMotion(PxD6Axis::eSWING1, y ? PxD6Motion::eLOCKED : PxD6Motion::eFREE);
-        m_joint->setMotion(PxD6Axis::eSWING2, z ? PxD6Motion::eLOCKED : PxD6Motion::eFREE);
-    }
 
     void setSpringParameters(float stiffness, float damping, float forceLimit)
     {
@@ -80,11 +113,43 @@ public:
         m_joint->setDrive(PxD6Drive::eZ, drive);
     }
 
+    struct IKResult
+    {
+        Matrix4 basePose;
+        Matrix4 cupPose;
+        Rad bendAngle;
+    };
+
+    IKResult doIK(const Magnum::Matrix4& goalPose)
+    {
+        Vector3 graspNormal = goalPose[2].xyz();
+
+        Vector3 basePosition = goalPose.transformPoint(TIP_POSE.translation());
+
+        Vector3 baseZ = Vector3::zAxis();
+        Vector3 baseY = Vector3{-graspNormal.xy(), 0.0f}.normalized();
+        Vector3 baseX = Math::cross(baseY, baseZ).normalized();
+
+        auto baseFrame = Matrix4::from(Matrix3{baseX, baseY, baseZ}, basePosition);
+
+        auto graspInBase = baseFrame.invertedRigid().transformVector(graspNormal);
+
+        Rad bendAngle = Rad{std::atan2(graspInBase.y(), -graspInBase.z())};
+
+        Matrix4 cupPose = baseFrame * Matrix4::rotationX(bendAngle);
+
+        return {
+            baseFrame,
+            cupPose,
+            bendAngle
+        };
+    }
+
     void step(const Magnum::Matrix4& goalPose, float dt)
     {
         m_joint->setDrivePosition(PxTransform{m_initialPose.invertedRigid() * goalPose});
 
-        auto scene = m_gripper->rigidBody().getScene();
+        auto scene = m_gripperBase->rigidBody().getScene();
         scene->simulate(dt);
         scene->fetchResults(true);
 
@@ -94,14 +159,24 @@ public:
 
     void resetPoseTo(const Magnum::Matrix4& pose)
     {
-        m_joint->setLocalPose(PxJointActorIndex::eACTOR0, PxTransform{pose});
-        m_gripper->setPose(pose);
-        m_gripper->rigidBody().clearForce();
-        m_gripper->rigidBody().clearTorque();
-        m_gripper->rigidBody().setLinearVelocity(PxVec3(0.0f, 0.0f, 0.0f));
-        m_gripper->rigidBody().setAngularVelocity(PxVec3(0.0f, 0.0f, 0.0f));
+        IKResult ik = doIK(pose);
 
-        m_initialPose = pose;
+        m_joint->setLocalPose(PxJointActorIndex::eACTOR0, PxTransform{ik.basePose});
+        m_gripperBase->setPose(ik.basePose);
+        m_gripperBase->rigidBody().clearForce();
+        m_gripperBase->rigidBody().clearTorque();
+        m_gripperBase->rigidBody().setLinearVelocity(PxVec3(0.0f, 0.0f, 0.0f));
+        m_gripperBase->rigidBody().setAngularVelocity(PxVec3(0.0f, 0.0f, 0.0f));
+
+        m_gripperCup->setPose(ik.cupPose);
+        m_gripperCup->rigidBody().clearForce();
+        m_gripperCup->rigidBody().clearTorque();
+        m_gripperCup->rigidBody().setLinearVelocity(PxVec3(0.0f, 0.0f, 0.0f));
+        m_gripperCup->rigidBody().setAngularVelocity(PxVec3(0.0f, 0.0f, 0.0f));
+
+        m_cupJoint->setDrivePosition(PxTransform{Matrix4::rotationX(ik.bendAngle)});
+
+        m_initialPose = ik.basePose;
     }
 
     void enableSuction(float goodSealForce, float badSealForce)
@@ -111,12 +186,14 @@ public:
         constexpr int NUM_CHECKS = 10;
         constexpr float SWING_LIMIT = 5.0f * M_PI / 180.0f;
 
-        auto scene = m_gripper->rigidBody().getScene();
-        auto& physics = m_gripper->mesh()->context()->physxPhysics();
+        auto scene = m_gripperBase->rigidBody().getScene();
+        auto& physics = m_gripperBase->mesh()->context()->physxPhysics();
 
         PxRaycastBuffer hit;
 
         std::vector<sl::Object*> objects;
+
+        auto tipPose = m_gripperCup->pose() * TIP_POSE;
 
         // check if we can make a good seal
 
@@ -126,8 +203,8 @@ public:
             float angle = angle_i * (2.0f*M_PI/NUM_CHECKS);
             float x = std::cos(angle) * RADIUS;
             float y = std::sin(angle) * RADIUS;
-            auto origin = PxVec3{m_gripper->pose().transformPoint(Vector3{x, y, -0.001f})};
-            auto unitDir = PxVec3{m_gripper->pose().transformVector(Vector3{0.f, 0.f, -1.f})};
+            auto origin = PxVec3{tipPose.transformPoint(Vector3{x, y, -0.001f})};
+            auto unitDir = PxVec3{tipPose.transformVector(Vector3{0.f, 0.f, -1.f})};
 
             scene->raycast(origin, unitDir, MAX_DISTANCE, hit);
             auto hitPositionInWorld = hit.block.position;
@@ -145,7 +222,7 @@ public:
                 continue;
             }
 
-            if(object == m_gripper.get())
+            if(object == m_gripperCup.get() || object == m_gripperBase.get())
                 throw std::runtime_error{"Hit myself with raycast, that should not happen"};
 
             auto it = std::find(objects.begin(), objects.end(), object);
@@ -170,8 +247,8 @@ public:
 
             Containers::Pointer<PxD6Joint> joint{PxD6JointCreate(
                 physics,
-                &m_gripper->rigidBody(), PxTransform(Matrix4{}),
-                &obj->rigidBody(), PxTransform(obj->pose().invertedRigid() * m_gripper->pose())
+                &m_gripperCup->rigidBody(), PxTransform(TIP_POSE),
+                &obj->rigidBody(), PxTransform(obj->pose().invertedRigid() * tipPose)
             )};
 
             joint->setMotion(PxD6Axis::eX, PxD6Motion::eLOCKED);
@@ -228,10 +305,13 @@ public:
 
 private:
     std::shared_ptr<sl::Scene> m_scene;
-    std::shared_ptr<sl::Object> m_gripper;
+    std::shared_ptr<sl::Object> m_gripperBase;
+    std::shared_ptr<sl::Object> m_gripperCup;
 
     Matrix4 m_initialPose;
     Containers::Pointer<PxD6Joint> m_joint;
+
+    Containers::Pointer<PxD6Joint> m_cupJoint;
 
     std::vector<Containers::Pointer<PxD6Joint>> m_graspedObjectJoints;
 };
@@ -244,9 +324,9 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
             The manipulator is driven using a spring damping system (basically Cartesian impedance control).
         )EOS")
 
-        .def(py::init([](const std::shared_ptr<sl::Scene>& scene, const std::shared_ptr<sl::Object>& gripper, const at::Tensor& initialPose){
+        .def(py::init([](const std::shared_ptr<sl::Scene>& scene, const std::shared_ptr<sl::Object>& gripperBase, const std::shared_ptr<sl::Object>& gripperCup, const at::Tensor& initialPose){
                 return new GripperSim(
-                    scene, gripper,
+                    scene, gripperBase, gripperCup,
                     magnum::fromTorch<Magnum::Matrix4>::convert(initialPose)
                 );
             }), R"EOS(
@@ -255,7 +335,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
             :param scene: The sl.Scene instance to run on
             :param manipulator: The sl.Object to use as manipulator
             :param initial_pose: Initial pose of the manipulator (in world coordinates)
-        )EOS", py::arg("scene"), py::arg("manipulator"), py::arg("initial_pose"))
+        )EOS", py::arg("scene"), py::arg("gripper_base"), py::arg("gripper_cup"), py::arg("initial_pose"))
 
         .def("set_spring_parameters", &GripperSim::setSpringParameters, R"EOS(
             Set spring parameters for driving the manipulator.
