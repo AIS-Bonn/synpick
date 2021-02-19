@@ -165,7 +165,8 @@ public:
             joint->setMotion(PxD6Axis::eSWING1, PxD6Motion::eLIMITED);
             joint->setMotion(PxD6Axis::eSWING2, PxD6Motion::eLIMITED);
 
-            joint->setSwingLimit(PxJointLimitCone(SWING_LIMIT, SWING_LIMIT));
+            joint->setLinearLimit(PxJointLinearLimit(0.005, PxSpring(10.0, 0.1)));
+            joint->setSwingLimit(PxJointLimitCone(SWING_LIMIT, SWING_LIMIT, PxSpring(10.0, 0.1)));
 
             joint->setBreakForce(force, force);
 

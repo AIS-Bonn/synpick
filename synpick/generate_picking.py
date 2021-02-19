@@ -78,7 +78,7 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
     #gripper_pose[:3,3] = waypoints[0]
     gripper_pose[2,3] = 0.5
     sim = GripperSim(scene, gripper, gripper_pose)
-    sim.set_spring_parameters(2500.0, 2.0, 90.0)
+    sim.set_spring_parameters(2500.0, 200.0, 200.0)
 
     renderer = sl.RenderPass()
 
