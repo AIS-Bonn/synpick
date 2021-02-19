@@ -60,7 +60,7 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
 
     GRIPPER_VELOCITY = 0.1
     DT = 0.002
-    STEPS_PER_FRAME = int(round((1.0 / 24) / DT))
+    STEPS_PER_FRAME = int(round((1.0 / 15) / DT))
 
     frame_idx = 0
 
