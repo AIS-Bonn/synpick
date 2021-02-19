@@ -21,7 +21,9 @@ using namespace Math::Literals;
 
 namespace
 {
-    const Matrix4 TIP_POSE = Matrix4::translation({0.0f, 0.0f, 0.052f});
+    const Matrix4 TIP_POSE = Matrix4::translation({0.0f, 0.0f, -0.055f});
+
+    const Matrix4 SUCTION_JOINT_FRAME = Matrix4::rotationY(90.0_degf);
 }
 
 class GripperSim
@@ -40,19 +42,17 @@ public:
         // Make sure the object is added to the scene
         if(std::find(scene->objects().begin(), scene->objects().end(), m_gripperBase) == scene->objects().end())
             scene->addObject(m_gripperBase);
-        if(std::find(scene->objects().begin(), scene->objects().end(), m_gripperBase) == scene->objects().end())
+        if(std::find(scene->objects().begin(), scene->objects().end(), m_gripperCup) == scene->objects().end())
             scene->addObject(m_gripperCup);
 
         scene->loadPhysics();
 
         auto& physics = m_scene->context()->physxPhysics();
 
-        Matrix4 jointFrame = Matrix4::rotationY(-90.0_degf);
-
         // Add a 6D joint which we use to control the manipulator
         m_joint.reset(PxD6JointCreate(physics,
-            nullptr, PxTransform{jointFrame}, // at current pose relative to world (null)
-            &m_gripperBase->rigidBody(), PxTransform{jointFrame} // in origin of manipulator
+            nullptr, PxTransform{PxIdentity}, // at current pose relative to world (null)
+            &m_gripperBase->rigidBody(), PxTransform{PxIdentity} // in origin of manipulator
         ));
 
         m_joint->setMotion(PxD6Axis::eX, PxD6Motion::eFREE);
@@ -63,9 +63,14 @@ public:
         m_joint->setMotion(PxD6Axis::eSWING2, PxD6Motion::eLOCKED);
 
         // Add a 6D joint for the cup
+        // The gripper cup rotates around the Y axis.
+        // The PhysX joint rotates around the X axis.
+
+        Matrix4 cupJointFrame = Matrix4::rotationZ(90.0_degf);
+
         m_cupJoint.reset(PxD6JointCreate(physics,
-            &m_gripperBase->rigidBody(), PxTransform{PxIDENTITY::PxIdentity},
-            &m_gripperCup->rigidBody(), PxTransform{PxIDENTITY::PxIdentity}
+            &m_gripperBase->rigidBody(), PxTransform{cupJointFrame},
+            &m_gripperCup->rigidBody(), PxTransform{cupJointFrame}
         ));
 
         m_cupJoint->setMotion(PxD6Axis::eX, PxD6Motion::eLOCKED);
@@ -120,23 +125,23 @@ public:
         Rad bendAngle;
     };
 
-    IKResult doIK(const Magnum::Matrix4& goalPose)
+    IKResult doIK(const Magnum::Vector3& graspPosition, const Magnum::Vector3& graspNormal)
     {
-        Vector3 graspNormal = goalPose[2].xyz();
-
-        Vector3 basePosition = goalPose.transformPoint(TIP_POSE.translation());
+        Vector3 basePosition = graspPosition + graspNormal.normalized() * (-TIP_POSE.translation().z());
 
         Vector3 baseZ = Vector3::zAxis();
-        Vector3 baseY = Vector3{-graspNormal.xy(), 0.0f}.normalized();
-        Vector3 baseX = Math::cross(baseY, baseZ).normalized();
+        Vector3 baseX = Vector3{-graspNormal.xy(), 0.0f}.normalized();
+        Vector3 baseY = Math::cross(baseZ, baseX).normalized();
 
         auto baseFrame = Matrix4::from(Matrix3{baseX, baseY, baseZ}, basePosition);
 
         auto graspInBase = baseFrame.invertedRigid().transformVector(graspNormal);
 
-        Rad bendAngle = Rad{std::atan2(graspInBase.y(), -graspInBase.z())};
+        Vector3 cupDirection = -graspInBase;
 
-        Matrix4 cupPose = baseFrame * Matrix4::rotationX(bendAngle);
+        Rad bendAngle = Rad{std::atan2(-cupDirection.x(), -cupDirection.z())};
+
+        Matrix4 cupPose = baseFrame * Matrix4::rotationY(bendAngle);
 
         return {
             baseFrame,
@@ -145,21 +150,11 @@ public:
         };
     }
 
-    void step(const Magnum::Matrix4& goalPose, float dt)
+    void prepareGrasp(const Magnum::Vector3& graspNormal, const Magnum::Vector3& startPosition)
     {
-        m_joint->setDrivePosition(PxTransform{m_initialPose.invertedRigid() * goalPose});
+        m_graspNormal = graspNormal;
 
-        auto scene = m_gripperBase->rigidBody().getScene();
-        scene->simulate(dt);
-        scene->fetchResults(true);
-
-        for(auto& obj : m_scene->objects())
-            obj->updateFromPhysics();
-    }
-
-    void resetPoseTo(const Magnum::Matrix4& pose)
-    {
-        IKResult ik = doIK(pose);
+        IKResult ik = doIK(startPosition, graspNormal);
 
         m_joint->setLocalPose(PxJointActorIndex::eACTOR0, PxTransform{ik.basePose});
         m_gripperBase->setPose(ik.basePose);
@@ -178,6 +173,22 @@ public:
 
         m_initialPose = ik.basePose;
     }
+
+    void step(const Magnum::Vector3& goalPosition, float dt)
+    {
+        IKResult ik = doIK(goalPosition, m_graspNormal);
+
+        m_joint->setDrivePosition(PxTransform{m_initialPose.invertedRigid() * ik.basePose});
+
+        auto scene = m_gripperBase->rigidBody().getScene();
+        scene->simulate(dt);
+        scene->fetchResults(true);
+
+        for(auto& obj : m_scene->objects())
+            obj->updateFromPhysics();
+    }
+
+
 
     void enableSuction(float goodSealForce, float badSealForce)
     {
@@ -247,8 +258,8 @@ public:
 
             Containers::Pointer<PxD6Joint> joint{PxD6JointCreate(
                 physics,
-                &m_gripperCup->rigidBody(), PxTransform(TIP_POSE),
-                &obj->rigidBody(), PxTransform(obj->pose().invertedRigid() * tipPose)
+                &m_gripperCup->rigidBody(), PxTransform(TIP_POSE * SUCTION_JOINT_FRAME),
+                &obj->rigidBody(), PxTransform(obj->pose().invertedRigid() * tipPose * SUCTION_JOINT_FRAME)
             )};
 
             joint->setMotion(PxD6Axis::eX, PxD6Motion::eLOCKED);
@@ -313,6 +324,8 @@ private:
 
     Containers::Pointer<PxD6Joint> m_cupJoint;
 
+    Vector3 m_graspNormal = Vector3::xAxis();
+
     std::vector<Containers::Pointer<PxD6Joint>> m_graspedObjectJoints;
 };
 
@@ -354,11 +367,12 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
             :param dt: Step length in s
         )EOS", py::arg("goal_pose"), py::arg("dt"))
 
-        .def("reset_pose_to", magnum::wrapRef(&GripperSim::resetPoseTo), R"EOS(
+        .def("prepare_grasp", magnum::wrapRef(&GripperSim::prepareGrasp), R"EOS(
             Reset gripper pose (teleport).
 
-            :param pose: Pose
-        )EOS", py::arg("pose"))
+            :param grasp_normal: Normal of the grasped surface
+            :param start_position: Start position of the gripper
+        )EOS", py::arg("grasp_normal"), py::arg("start_position"))
 
         .def("enable_suction", &GripperSim::enableSuction, R"EOS(
             Try to suction an object at the current gripper pose.

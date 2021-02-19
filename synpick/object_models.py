@@ -63,6 +63,16 @@ def load_gripper():
     gripper.class_index = 0
     return gripper
 
+def load_gripper_base():
+    gripper = sl.Mesh('meshes/gripper_base.glb', flags=sl.Mesh.Flag.PHYSICS_FORCE_CONVEX_HULL)
+    gripper.class_index = 0
+    return gripper
+
+def load_gripper_cup():
+    gripper = sl.Mesh('meshes/gripper_cup.glb', flags=sl.Mesh.Flag.PHYSICS_FORCE_CONVEX_HULL)
+    gripper.class_index = 0
+    return gripper
+
 if __name__ == "__main__":
     sl.init()
 

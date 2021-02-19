@@ -1,6 +1,6 @@
 
 
-from synpick.object_models import load_gripper, load_tote, load_meshes, OBJECT_NAMES
+from synpick.object_models import load_gripper_base, load_gripper_cup, load_tote, load_meshes, OBJECT_NAMES
 from synpick.scene import create_scene, CAMERA_POSES
 from synpick.output import Writer
 from synpick.gripper_sim import GripperSim
@@ -69,15 +69,19 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
     print('Done.\n')
 
     # Load gripper
-    gripper = sl.Object(load_gripper())
+    gripper = sl.Object(load_gripper_base())
     gripper.metallic = 0.01
     gripper.roughness = 0.9
+
+    gripper_cup = sl.Object(load_gripper_cup())
+    gripper_cup.metallic = 0.01
+    gripper_cup.roughness = 0.9
 
     # Manipulation simulation
     gripper_pose = torch.eye(4)
     #gripper_pose[:3,3] = waypoints[0]
     gripper_pose[2,3] = 0.5
-    sim = GripperSim(scene, gripper, gripper_pose)
+    sim = GripperSim(scene, gripper, gripper_cup, gripper_pose)
     sim.set_spring_parameters(2500.0, 200.0, 200.0)
 
     renderer = sl.RenderPass()
@@ -92,14 +96,15 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
     # Create an output writer for each camera pose
     writers = [ Writer(out / f'{start_index+i:06}') for i in range(len(CAMERA_POSES)) ]
 
-    gripper_out_of_way = torch.eye(4)
-    gripper_out_of_way[2,3] = 10.0
+    gripper_out_of_way = translation(0.0, 0.0, 10.0)
+
+    viewer = sl.Viewer(scene)
 
     def move_gripper_to(pos, vel=GRIPPER_VELOCITY):
         nonlocal frame_idx
         nonlocal gripper_pose
 
-        print(f'Moving to {pos.tolist()}')
+        print(f'Moving from {gripper_pose[:3,3].tolist()} to {pos.tolist()}')
 
         while True:
             delta = pos - gripper_pose[:3,3]
@@ -113,13 +118,14 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
 
             gripper_pose[:3,3] += delta
 
-            sim.step(gripper_pose, DT)
+            sim.step(gripper_pose[:3,3], DT)
 
             if frame_idx % STEPS_PER_FRAME == 0:
                 for writer, camera_pose in zip(writers, CAMERA_POSES):
                     scene.set_camera_pose(camera_pose)
                     result = renderer.render(scene)
                     writer.write_frame(scene, result)
+                    viewer.draw_frame()
 
             frame_idx += 1
 
@@ -135,6 +141,7 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
             # without gripper
             saved_gripper_pose = gripper.pose()
             gripper.set_pose(gripper_out_of_way)
+            gripper_cup.set_pose(gripper_out_of_way)
 
             result = renderer.render(scene)
 
@@ -170,8 +177,17 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
             print(f"I'm going to pick {objectName} at {goalPixel.tolist()}")
 
             coord = result.cam_coordinates()[goalPixel[1], goalPixel[0]].cpu()
-            normal = result.normals()[goalPixel[1], goalPixel[0], :3].cpu()
+
+            # Smooth normal in a small window
+            S = 20
+            norm_miny = max(0, goalPixel[1] - S)
+            norm_maxy = min(scene.viewport[1]-1, goalPixel[1] + S)
+            norm_minx = max(0, goalPixel[0] - S)
+            norm_maxx = min(scene.viewport[0]-1, goalPixel[0] + S)
+            normal = result.normals()[norm_miny:norm_maxy, norm_minx:norm_maxx, :3].mean(dim=0).mean(dim=0).cpu()
             print(f"Camera-space coords: {coord.tolist()}, normal: {normal.tolist()}")
+
+            normal = normal / normal.norm()
 
             coord = scene.camera_pose() @ coord
             normal = scene.camera_pose()[:3,:3] @ normal
@@ -180,14 +196,14 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
 
             graspFrame = compute_grasp_frame(coord[:3], normal)
 
-            start = graspFrame @ translation(0.0, 0.0, 1.0)
+            start = graspFrame @ translation(0.0, 0.0, 0.4)
             close = graspFrame @ translation(0.0, 0.0, 0.05)
             above = translation(0.0, 0.0, 1.0) @ graspFrame
             away = translation(1.0, 0.0, 1.0) @ graspFrame
-            gripper_pose[:] = start
+            gripper_pose[:] = above
 
             # 1) MOVEMENT: from pose above to grasp frame
-            sim.reset_pose_to(gripper_pose)
+            sim.prepare_grasp(normal, above[:3,3])
 
             move_gripper_to(close[:3,3], vel=1.0)
             move_gripper_to(graspFrame[:3,3], vel=0.1)
