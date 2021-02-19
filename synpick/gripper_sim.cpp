@@ -194,6 +194,8 @@ public:
     {
         std::vector<std::shared_ptr<sl::Object>> objects;
 
+        auto& sceneObjects = m_scene->objects();
+
         for(auto& joint : m_graspedObjectJoints)
         {
             if(joint->getConstraintFlags() & PxConstraintFlag::eBROKEN)
@@ -206,11 +208,11 @@ public:
             PxRigidActor* actor1{};
             joint->getActors(actor0, actor1);
 
-            for(auto& object : m_scene->objects())
-            {
-                if(static_cast<PxRigidActor*>(&object->rigidBody()) == actor1)
-                    objects.push_back(object);
-            }
+            auto it = std::find_if(sceneObjects.begin(), sceneObjects.end(), [&](auto& obj){
+                return static_cast<PxRigidActor*>(&obj->rigidBody()) == actor1;
+            });
+            if(it != sceneObjects.end())
+                objects.push_back(*it);
         }
 
         // PhysX is strange.
