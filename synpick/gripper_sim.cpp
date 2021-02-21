@@ -104,6 +104,13 @@ public:
 
         m_cupJoint->release();
         m_cupJoint.release();
+
+        // PhysX is strange.
+        for(auto& joint : m_graspedObjectJoints)
+        {
+            joint->release();
+            joint.release();
+        }
     }
 
     GripperSim(const GripperSim&) = delete;
