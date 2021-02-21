@@ -241,5 +241,9 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    sl.init_cuda()
+    if torch.cuda.is_available():
+        sl.init_cuda()
+    else:
+        sl.init()
+
     run(out=Path(args.out), start_index=args.base, ibl_path=Path(args.ibl), visualize=args.viewer)

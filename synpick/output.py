@@ -14,6 +14,7 @@ class Writer(object):
         self.path = path
         self.idx = 0
         self.depth_scale = 10000.0 # depth [m] = pixel / depth_scale
+        self.saver = sl.ImageSaver()
 
         # Create output directory
         path.mkdir(parents=True)
@@ -29,6 +30,7 @@ class Writer(object):
         self.gt_file.write('{\n')
 
     def __enter__(self):
+        self.saver.__enter__()
         return self
 
     def __exit__(self, type, value, traceback):
@@ -39,6 +41,8 @@ class Writer(object):
         # Finish gt_file
         self.gt_file.write('\n}')
         self.gt_file.close()
+
+        self.saver.__exit__(type, value, traceback)
 
     @staticmethod
     def intrinsicMatrixFromProjection(proj : torch.tensor, W : int, H : int):
@@ -73,12 +77,16 @@ class Writer(object):
     def write_frame(self, scene : sl.Scene, result : sl.RenderPassResult):
 
         # TODO: Augmentation?
-        rgb = Image.fromarray(result.rgb()[:,:,:3].cpu().numpy())
-        rgb.save(self.path / 'rgb' / f'{self.idx:06}.jpg')
+        self.saver.save(
+            result.rgb()[:,:,:3].cpu().contiguous(),
+            str(self.path / 'rgb' / f'{self.idx:06}.jpg')
+        )
 
-        depth = (result.depth().cpu() * self.depth_scale).short().numpy()
-        depth = Image.fromarray(depth)
-        depth.save(self.path / 'depth' / f'{self.idx:06}.png')
+        depth = (result.depth().cpu() * self.depth_scale).short().contiguous()
+        self.saver.save(
+            depth,
+            str(self.path / 'depth' / f'{self.idx:06}.png')
+        )
 
         # Figure out cam_K
         P = scene.projection_matrix()
