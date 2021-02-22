@@ -162,9 +162,9 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
                 object_sizes=object_sizes,
             )
 
-            vis = visualize_detections(result.rgb()[:,:,:3], detections, True)
-            Image.fromarray(result.rgb()[:,:,:3].cpu().numpy()).save('/tmp/rgb.png')
-            Image.fromarray(vis.numpy()).save('/tmp/vis.png')
+            #vis = visualize_detections(result.rgb()[:,:,:3], detections, True)
+            #Image.fromarray(result.rgb()[:,:,:3].cpu().numpy()).save('/tmp/rgb.png')
+            #Image.fromarray(vis.numpy()).save('/tmp/vis.png')
 
             process_detections(detections)
 

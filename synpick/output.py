@@ -7,7 +7,6 @@ import stillleben as sl
 import torch
 
 from pathlib import Path
-from PIL import Image
 
 class Writer(object):
     def __init__(self, path : Path):
@@ -82,7 +81,7 @@ class Writer(object):
             str(self.path / 'rgb' / f'{self.idx:06}.jpg')
         )
 
-        depth = (result.depth().cpu() * self.depth_scale).short().contiguous()
+        depth = (result.depth() * self.depth_scale).short().cpu().contiguous()
         self.saver.save(
             depth,
             str(self.path / 'depth' / f'{self.idx:06}.png')
