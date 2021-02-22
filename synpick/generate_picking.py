@@ -93,6 +93,7 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
     STEPS_PER_FRAME = int(round((1.0 / 15) / DT))
 
     frame_idx = 0
+    failed_picks = 0
 
     # Create an output writer for each camera pose
     writers = [ Writer(out / f'{start_index+i:06}') for i in range(len(CAMERA_POSES)) ]
@@ -135,7 +136,7 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
         for writer in writers:
             stack.enter_context(writer)
 
-        while True:
+        while failed_picks < 3:
             # Render once from above
             scene.set_camera_pose(CAMERA_POSES[0])
 
@@ -220,6 +221,11 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
             print(f"Back above")
 
             got_objects = sim.disable_suction()
+
+            if len(got_objects) == 0:
+                print(f"Failed!")
+                failed_picks += 1
+                continue
 
             print(f"I got:")
             for obj in got_objects:
