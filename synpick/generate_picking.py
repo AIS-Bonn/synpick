@@ -133,9 +133,15 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
 
     # Generate sequence!
     with ExitStack() as stack:
-        for writer in writers:
+
+        # Write once-per-sequence data
+        for writer, camera_pose in zip(writers, CAMERA_POSES):
             stack.enter_context(writer)
 
+            scene.set_camera_pose(camera_pose)
+            writer.write_scene_data(scene)
+
+        # Execute!
         while failed_picks < 3:
             # Render once from above
             scene.set_camera_pose(CAMERA_POSES[0])

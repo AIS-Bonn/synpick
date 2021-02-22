@@ -74,6 +74,10 @@ class Writer(object):
             [0.0, 0.0, 1.0]
         ])
 
+    def write_scene_data(self, scene : sl.Scene):
+        with open(self.path / 'scene.sl', 'w') as f:
+            f.write(scene.serialize())
+
     def write_frame(self, scene : sl.Scene, result : sl.RenderPassResult):
 
         # TODO: Augmentation?
