@@ -100,7 +100,10 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
 
     gripper_out_of_way = translation(0.0, 0.0, 10.0)
 
-    viewer = sl.Viewer(scene)
+    if visualize:
+        viewer = sl.Viewer(scene)
+    else:
+        viewer = None
 
     # Define helper functions
     def log(*args, **kwargs):
@@ -134,7 +137,9 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
                     scene.set_camera_pose(camera_pose)
                     result = renderer.render(scene)
                     writer.write_frame(scene, result)
-                    viewer.draw_frame()
+
+                    if viewer:
+                        viewer.draw_frame()
 
             frame_idx += 1
 
