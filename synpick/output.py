@@ -5,6 +5,7 @@ Methods for writing an output frame
 
 import stillleben as sl
 import torch
+import time
 
 from pathlib import Path
 
@@ -76,12 +77,24 @@ class Writer(object):
     def write_frame(self, scene : sl.Scene, result : sl.RenderPassResult):
 
         # TODO: Augmentation?
+        #t0 = time.time()
+        rgb = result.rgb()[:,:,:3].cpu().contiguous()
+        #t1 = time.time()
+
+        #print(f'RGB: {t1-t0}')
+
         self.saver.save(
-            result.rgb()[:,:,:3].cpu().contiguous(),
+            rgb,
             str(self.path / 'rgb' / f'{self.idx:06}.jpg')
         )
 
+        #t0 = time.time()
         depth = (result.depth() * self.depth_scale).short().cpu().contiguous()
+        #t1 = time.time()
+
+        #print(f'Depth: {t1-t0}')
+
+
         self.saver.save(
             depth,
             str(self.path / 'depth' / f'{self.idx:06}.png')
