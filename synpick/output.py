@@ -29,6 +29,8 @@ class Writer(object):
         self.gt_file = open(path / 'scene_gt.json', 'w')
         self.gt_file.write('{\n')
 
+        self.log_file = open(path / 'log.txt', 'w')
+
     def __enter__(self):
         self.saver.__enter__()
         return self
@@ -41,6 +43,9 @@ class Writer(object):
         # Finish gt_file
         self.gt_file.write('\n}')
         self.gt_file.close()
+
+        # Finish log file
+        self.log_file.close()
 
         self.saver.__exit__(type, value, traceback)
 
@@ -73,6 +78,10 @@ class Writer(object):
             [0.0, fy, cy],
             [0.0, 0.0, 1.0]
         ])
+
+    def write_log(self, *args, **kwargs):
+        self.log_file.write(f'{self.idx:06}: ')
+        print(*args, **kwargs, file=self.log_file)
 
     def write_scene_data(self, scene : sl.Scene):
         with open(self.path / 'scene.sl', 'w') as f:
@@ -111,11 +120,13 @@ class Writer(object):
         cam_K = Writer.intrinsicMatrixFromProjection(P, W, H)
 
         world_in_camera = torch.inverse(scene.camera_pose())
+        cam_R_w2c = world_in_camera[:3,:3].contiguous()
+        cam_t_w2c = world_in_camera[:3,3] * 1000.0 # millimeters, of course.
 
         # Write scene_camera.json
         if self.idx != 0:
             self.camera_file.write(',\n')
-        self.camera_file.write(f'  "{self.idx}": {{"cam_K": {cam_K.view(-1).tolist()}, "depth_scale": {1.0 / (self.depth_scale / 1000.0)}}}')
+        self.camera_file.write(f'  "{self.idx}": {{"cam_K": {cam_K.view(-1).tolist()}, "depth_scale": {1.0 / (self.depth_scale / 1000.0)}, "cam_R_w2c": {cam_R_w2c.view(-1).tolist()}, "cam_t_w2c": {cam_t_w2c.tolist()}}}')
 
         # Write scene_gt.json
         if self.idx != 0:

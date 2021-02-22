@@ -102,11 +102,18 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
 
     viewer = sl.Viewer(scene)
 
+    # Define helper functions
+    def log(*args, **kwargs):
+        for writer in writers:
+            writer.write_log(*args, **kwargs)
+
+        print(*args, **kwargs)
+
     def move_gripper_to(pos, vel=GRIPPER_VELOCITY):
         nonlocal frame_idx
         nonlocal gripper_pose
 
-        print(f'Moving from {gripper_pose[:3,3].tolist()} to {pos.tolist()}')
+        log(f'Moving from {gripper_pose[:3,3].tolist()} to {pos.tolist()}')
 
         while True:
             delta = pos - gripper_pose[:3,3]
@@ -177,12 +184,12 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
             process_detections(detections)
 
             if len(detections) == 0:
-                print("Empty!")
+                log("Empty!")
                 break
 
             objectName = detections[0].name
             goalPixel = detections[0].suction_point
-            print(f"I'm going to pick {objectName} at {goalPixel.tolist()}")
+            log(f"I'm going to pick {objectName} at {goalPixel.tolist()}")
 
             coord = result.cam_coordinates()[goalPixel[1], goalPixel[0]].cpu()
 
@@ -193,14 +200,14 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
             norm_minx = max(0, goalPixel[0] - S)
             norm_maxx = min(scene.viewport[0]-1, goalPixel[0] + S)
             normal = result.normals()[norm_miny:norm_maxy, norm_minx:norm_maxx, :3].mean(dim=0).mean(dim=0).cpu()
-            print(f"Camera-space coords: {coord.tolist()}, normal: {normal.tolist()}")
+            log(f"Camera-space coords: {coord.tolist()}, normal: {normal.tolist()}")
 
             normal = normal / normal.norm()
 
             coord = scene.camera_pose() @ coord
             normal = scene.camera_pose()[:3,:3] @ normal
 
-            print(f"World-space coords: {coord.tolist()}, normal: {normal.tolist()}")
+            log(f"World-space coords: {coord.tolist()}, normal: {normal.tolist()}")
 
             graspFrame = compute_grasp_frame(coord[:3], normal)
 
@@ -217,28 +224,28 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
             move_gripper_to(graspFrame[:3,3], vel=0.1)
 
             # 2) SUCTION
-            print(f"Arrived at object!")
+            log(f"Arrived at object!")
             sim.enable_suction(100.0, 0.2)
 
             # 3) MOVEMENT: Back out
             move_gripper_to(above[:3,3])
             #move_gripper_to(away[:3,3])
 
-            print(f"Back above")
+            log(f"Back above")
 
             got_objects = sim.disable_suction()
 
             if len(got_objects) == 0:
-                print(f"Failed!")
+                log(f"Grasp failed, got no object!")
                 failed_picks += 1
                 continue
 
-            print(f"I got:")
+            log(f"I got:")
             for obj in got_objects:
-                print(f" - {OBJECT_NAMES[obj.mesh.class_index]}")
+                log(f" - {OBJECT_NAMES[obj.mesh.class_index]} (ID {obj.mesh.class_index})")
                 scene.remove_object(obj)
 
-    print('Finished')
+        log('Finished')
 
 if __name__ == "__main__":
     import argparse
