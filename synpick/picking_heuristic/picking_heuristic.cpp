@@ -563,7 +563,7 @@ void postprocessWithDepth(std::vector<Detection>* detections, const cv::Mat_<uin
     // Find strongly connected components (= components containing cycles or singletons!)
     auto components = graph::tarjan(G);
 
-    printf("%lu strongly connected components (%lu vertices)\n", components.size(), G.vertices().size());
+//     printf("%lu strongly connected components (%lu vertices)\n", components.size(), G.vertices().size());
 
 //     for(auto& component : components)
 //     {
@@ -582,7 +582,7 @@ void postprocessWithDepth(std::vector<Detection>* detections, const cv::Mat_<uin
             if(component.size() <= 1)
                 continue;
 
-            printf("Found component with %lu vertices\n", component.size());
+//             printf("Found component with %lu vertices\n", component.size());
 
             std::vector<bool> inComponent(G.vertices().size(), false);
             for(auto v : component)
@@ -590,11 +590,11 @@ void postprocessWithDepth(std::vector<Detection>* detections, const cv::Mat_<uin
 
             for(auto v : component)
             {
-                printf("Node %u\n", v);
+//                 printf("Node %u\n", v);
                 for(auto edgeID : G.vertices()[v].successors)
                 {
                     auto& edge = G.edges()[edgeID];
-                    printf("%u: %u -> %u\n", edgeID, edge.from, edge.to);
+//                     printf("%u: %u -> %u\n", edgeID, edge.from, edge.to);
                     if(inComponent[G.edges()[edgeID].to])
                         problematicEdges.push_back(edgeID);
                 }
@@ -614,7 +614,7 @@ void postprocessWithDepth(std::vector<Detection>* detections, const cv::Mat_<uin
         });
     }
 
-    printf("Found %lu problematic edges\n", problematicEdges.size());
+//     printf("Found %lu problematic edges\n", problematicEdges.size());
     std::sort(problematicEdges.begin(), problematicEdges.end(), [&](graph::EdgeID a, graph::EdgeID b) {
         return G.edges()[a].weight > G.edges()[b].weight;
     });
@@ -622,37 +622,7 @@ void postprocessWithDepth(std::vector<Detection>* detections, const cv::Mat_<uin
         printf(" - %20s -> %20s (%f)\n", classes[G.edges()[e].from].c_str(), classes[G.edges()[e].to].c_str(), G.edges()[e].weight);
 
 
-    /*if(problematicEdges.size() > 32)
-    {
-        ROS_ERROR("I do not know how to solve for so many problematic edges.");
-        ROS_ERROR("Falling back to stupid approximation");
-
-        std::vector<graph::Edge> set1;
-        std::vector<graph::Edge> set2;
-
-        for(const auto& edge : G.edges())
-        {
-            if(edge.from < edge.to)
-                set1.push_back(edge);
-            else
-                set2.push_back(edge);
-        }
-
-        // set1 and set2 are both acyclic, see which one is better
-        double weight1 = std::accumulate(set1.begin(), set1.end(), 0.0, [](double w, const graph::Edge& e){
-            return w + e.weight;
-        });
-        double weight2 = std::accumulate(set2.begin(), set2.end(), 0.0, [](double w, const graph::Edge& e){
-            return w + e.weight;
-        });
-
-        if(weight1 > weight2)
-            G.edges() = set1;
-        else
-            G.edges() = set2;
-        G.reconstructSuccessors();
-    }
-    else */if(problematicEdges.size() != 0)
+    if(problematicEdges.size() != 0)
     {
         // FIXME: This could be done per strongly connected component
 
@@ -669,7 +639,7 @@ void postprocessWithDepth(std::vector<Detection>* detections, const cv::Mat_<uin
         double bestWeight = 0.0;
         trySolution(G, problematicEdges, 0, &work, &bestSolution, &bestWeight);
 
-        printf("Best solution has weight %f\n", bestWeight);
+//         printf("Best solution has weight %f\n", bestWeight);
 
         std::vector<graph::Edge> edges;
         edges.reserve(G.edges().size());
@@ -680,11 +650,11 @@ void postprocessWithDepth(std::vector<Detection>* detections, const cv::Mat_<uin
                 continue;
 
             auto edge = G.edges()[edgeID];
-            printf("Solution includes %s -> %s (%f)\n",
-                classes[edge.from].c_str(),
-                classes[edge.to].c_str(),
-                edge.weight
-            );
+//             printf("Solution includes %s -> %s (%f)\n",
+//                 classes[edge.from].c_str(),
+//                 classes[edge.to].c_str(),
+//                 edge.weight
+//             );
         }
 
         for(graph::EdgeID e = 0; e < G.edges().size(); ++e)
@@ -770,11 +740,6 @@ void postprocessWithDepth(std::vector<Detection>* detections, const cv::Mat_<uin
 
 cv::Mat_<cv::Vec3b> visualizeDetections(const cv::Mat_<cv::Vec3b>& rgb, const std::vector<Detection>& detectionsIn, bool grasps)
 {
-//     std::vector<Detection> detections = detectionsIn;
-//     std::sort(detections.begin(), detections.end(), [](const Detection& a, const Detection& b) {
-//         return static_cast<float>(a.centroid.y) / a.centroid.x < static_cast<float>(b.centroid.y) / b.centroid.x;
-//     });
-
     std::vector<Detection> leftDetections;
     std::vector<Detection> rightDetections;
 
