@@ -1,6 +1,6 @@
 
 
-from synpick.object_models import load_gripper_base, load_gripper_cup, load_tote, load_meshes, OBJECT_NAMES
+from synpick.object_models import load_gripper_base, load_gripper_cup, load_tote, load_meshes, OBJECT_NAMES, get_object, OBJECT_INFO
 from synpick.scene import create_scene, CAMERA_POSES
 from synpick.output import Writer
 from synpick.gripper_sim import GripperSim
@@ -40,7 +40,7 @@ def translation(x, y, z):
 def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False):
 
     meshes = load_meshes()
-    mesh_pool = list(meshes)
+    mesh_pool = list(range(len(meshes)))
 
     object_sizes = torch.stack(
         [torch.zeros(3)] + \
@@ -55,14 +55,15 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
     # Add meshes
     volume = 0
     while volume < 7.0 / 1000.0:
-        mesh = random.choice(mesh_pool)
-        mesh_pool.remove(mesh)
+        mesh_idx = random.choice(mesh_pool)
+        mesh_pool.remove(mesh_idx)
 
-        obj = sl.Object(mesh)
+        obj = get_object(meshes[mesh_idx], OBJECT_INFO[mesh_idx+1])
         obj.instance_index = len(scene.objects)+1
 
         scene.add_object(obj)
         volume += obj.volume
+        print(volume)
 
     print('Dropping items...')
     scene.simulate_tabletop_scene()
