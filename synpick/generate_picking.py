@@ -214,7 +214,7 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
 
             # 3) MOVEMENT: Back out
             move_gripper_to(above[:3,3])
-            move_gripper_to(away[:3,3])
+            #move_gripper_to(away[:3,3])
 
             print(f"Back above")
 
@@ -223,7 +223,7 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
             print(f"I got:")
             for obj in got_objects:
                 print(f" - {OBJECT_NAMES[obj.mesh.class_index]}")
-                #scene.remove_object(obj)
+                scene.remove_object(obj)
 
     print('Finished')
 
