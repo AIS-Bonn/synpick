@@ -31,7 +31,13 @@ class Writer(object):
         self.gt_file = open(path / 'scene_gt.json', 'w')
         self.gt_file.write('{\n')
 
+        self.info_file = open(path / 'scene_gt_info.json', 'w')
+        self.info_file.write('{\n')
+
         self.log_file = open(path / 'log.txt', 'w')
+
+        self.mask_renderer = sl.RenderPass('flat')
+        self.mask_renderer.ssao_enabled = False
 
     def __enter__(self):
         self.saver.__enter__()
@@ -45,6 +51,10 @@ class Writer(object):
         # Finish gt_file
         self.gt_file.write('\n}')
         self.gt_file.close()
+
+        # Finish info file
+        self.info_file.write('\n}')
+        self.info_file.close()
 
         # Finish log file
         self.log_file.close()
@@ -80,6 +90,25 @@ class Writer(object):
             [0.0, fy, cy],
             [0.0, 0.0, 1.0]
         ])
+
+    @staticmethod
+    def bbox_from_mask(mask):
+        """Compute bounding boxes from masks.
+        mask: [height, width]. Mask pixels are either 1 or 0.
+        """
+
+        horizontal_indices = torch.where(torch.any(mask, dim=0))[0]
+        vertical_indices = torch.where(torch.any(mask, dim=1))[0]
+
+        if len(horizontal_indices) != 0:
+            x1, x2 = horizontal_indices[[0,-1]].tolist()
+            y1, y2 = vertical_indices[[0,-1]].tolist()
+            x2 += 1
+            y2 += 1
+
+            return x1, x2, x2-x1, y2-y1
+        else:
+            return 0, 0, 0, 0
 
     def write_log(self, *args, **kwargs):
         self.log_file.write(f'{self.idx:06}: ')
@@ -118,13 +147,45 @@ class Writer(object):
         # Masks
         active_objects = [ o for o in scene.objects if o.mesh.class_index > 0 ]
 
+        if self.idx != 0:
+            self.info_file.write(',\n\n')
+
+        self.info_file.write(f'  "{self.idx}": [\n')
+
         segmentation = result.instance_index()[:,:,0].byte().cpu()
         for i, obj in enumerate(active_objects):
-            mask = (segmentation == obj.instance_index).byte() * 255
+            mask = (segmentation == obj.instance_index).byte()
             self.saver.save(
-                mask,
+                mask * 255,
                 str(self.path / 'mask_visib' / f'{self.idx:06}_{i:06}.png')
             )
+
+            visib_num_pixels = mask.sum()
+            visib_bbox = Writer.bbox_from_mask(mask)
+
+            # Render this object alone
+            silhouette = self.mask_renderer.render(scene, predicate=lambda o: o == obj)
+
+            sil_mask = (silhouette.class_index()[:,:,0] != 0).byte().cpu()
+
+            sil_num_pixels = sil_mask.sum()
+            sil_bbox = Writer.bbox_from_mask(sil_mask)
+
+            if sil_num_pixels > 0:
+                visib_fract = float(visib_num_pixels) / float(sil_num_pixels)
+            else:
+                visib_fract = 0
+
+            if i != 0:
+                self.info_file.write(',\n')
+
+            self.info_file.write(
+                f'    {{"bbox_obj": {list(sil_bbox)}, "bbox_visib": {list(visib_bbox)}, ' +
+                f'"px_count_all": {int(sil_num_pixels)}, "px_count_valid": {int(sil_num_pixels)}, ' +
+                f'"px_count_visib": {int(visib_num_pixels)}, "visib_fract": {visib_fract}}}'
+            )
+
+        self.info_file.write(']')
 
         # Figure out cam_K
         P = scene.projection_matrix()
