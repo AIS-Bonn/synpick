@@ -106,7 +106,7 @@ class Writer(object):
             x2 += 1
             y2 += 1
 
-            return x1, x2, x2-x1, y2-y1
+            return x1, y1, x2-x1, y2-y1
         else:
             return 0, 0, 0, 0
 
