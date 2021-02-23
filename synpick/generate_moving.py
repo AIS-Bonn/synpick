@@ -21,6 +21,7 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
 
     # Add meshes
     volume = 0
+    obj_idx = 1
     while volume < 7.0 / 1000.0:
         mesh = random.choice(meshes)
 
@@ -28,6 +29,10 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
         obj.instance_index = len(scene.objects)+1
 
         scene.add_object(obj)
+
+        obj.instance_index = obj_idx
+        obj_idx += 1
+
         volume += obj.volume
 
     print('Dropping items...')
@@ -48,6 +53,9 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
     gripper.metallic = 0.01
     gripper.roughness = 0.9
     gripper.linear_velocity_limit = 0.06
+
+    scene.add_object(gripper)
+    gripper.instance_index = 0
 
     # Manipulation simulation
     gripper_pose = torch.eye(4)

@@ -59,6 +59,7 @@ def create_scene(ibl_path : Path):
     tote_obj = sl.Object(load_tote())
     tote_obj.static = True
     scene.add_object(tote_obj)
+    tote_obj.instance_index = 0
 
     scene.choose_random_camera_pose()
 

@@ -54,14 +54,18 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
 
     # Add meshes
     volume = 0
+    obj_idx = 1
     while volume < 7.0 / 1000.0:
         mesh_idx = random.choice(mesh_pool)
         mesh_pool.remove(mesh_idx)
 
         obj = get_object(meshes[mesh_idx], OBJECT_INFO[mesh_idx+1])
-        obj.instance_index = len(scene.objects)+1
 
         scene.add_object(obj)
+
+        obj.instance_index = obj_idx
+        obj_idx += 1
+
         volume += obj.volume
         print(volume)
 
@@ -74,9 +78,15 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
     gripper.metallic = 0.01
     gripper.roughness = 0.9
 
+    scene.add_object(gripper)
+    gripper.instance_index = 0
+
     gripper_cup = sl.Object(load_gripper_cup())
     gripper_cup.metallic = 0.01
     gripper_cup.roughness = 0.9
+
+    scene.add_object(gripper_cup)
+    gripper_cup.instance_index = 0
 
     # Manipulation simulation
     gripper_pose = torch.eye(4)

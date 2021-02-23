@@ -116,9 +116,11 @@ class Writer(object):
         )
 
         # Masks
-        segmentation = result.class_index()[:,:,0].byte().cpu()
-        for i in range(1, len(OBJECT_INFO)):
-            mask = (segmentation == i).byte() * 255
+        active_objects = [ o for o in scene.objects if o.mesh.class_index > 0 ]
+
+        segmentation = result.instance_index()[:,:,0].byte().cpu()
+        for i, obj in enumerate(active_objects):
+            mask = (segmentation == obj.instance_index).byte() * 255
             self.saver.save(
                 mask,
                 str(self.path / 'mask_visib' / f'{self.idx:06}_{i:06}.png')
@@ -151,7 +153,7 @@ class Writer(object):
 
             return f'{{"cam_R_m2c": {cam_R_m2c.view(-1).tolist()}, "cam_t_m2c": {cam_t_m2c.tolist()}, "obj_id": {o.mesh.class_index}}}'
 
-        formatted_gt = ",\n".join([ gt(o) for o in scene.objects if o.mesh.class_index > 0 ])
+        formatted_gt = ",\n".join([ gt(o) for o in active_objects ])
         self.gt_file.write(f'  "{self.idx}": [\n    {formatted_gt}]')
 
         self.idx += 1
