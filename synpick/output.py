@@ -9,6 +9,8 @@ import time
 
 from pathlib import Path
 
+from .object_models import OBJECT_INFO
+
 class Writer(object):
     def __init__(self, path : Path):
         self.path = path
@@ -112,6 +114,15 @@ class Writer(object):
             depth,
             str(self.path / 'depth' / f'{self.idx:06}.png')
         )
+
+        # Masks
+        segmentation = result.class_index()[:,:,0].byte().cpu()
+        for i in range(1, len(OBJECT_INFO)):
+            mask = (segmentation == i).byte() * 255
+            self.saver.save(
+                mask,
+                str(self.path / 'mask_visib' / f'{self.idx:06}_{i:06}.png')
+            )
 
         # Figure out cam_K
         P = scene.projection_matrix()
