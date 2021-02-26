@@ -10,7 +10,10 @@ from pathlib import Path
 
 from .object_models import load_tote
 
-RESOLUTION = (1920, 1080)
+#RESOLUTION = (1920, 1080)
+#FOV_X = 20.0 * math.pi / 180.0
+
+RESOLUTION = (640,480)
 FOV_X = 20.0 * math.pi / 180.0
 
 TOTE_DIM = torch.tensor([0.615 + 0.1, 0.373 + 0.2, 0.2])

@@ -37,7 +37,7 @@ def translation(x, y, z):
     T[:3,3] = torch.tensor([x,y,z])
     return T
 
-def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False):
+def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False, bad : bool = False):
 
     meshes = load_meshes()
     mesh_pool = list(range(len(meshes)))
@@ -142,6 +142,12 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
 
             sim.step(gripper_pose[:3,3], DT)
 
+            # Remove any objects that have fallen out
+            objects = list(scene.objects)
+            for obj in objects:
+                if obj.pose()[2,3] < -0.1:
+                    scene.remove_object(obj)
+
             if frame_idx % STEPS_PER_FRAME == 0:
                 for writer, camera_pose in zip(writers, CAMERA_POSES):
                     scene.set_camera_pose(camera_pose)
@@ -152,6 +158,8 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
                         viewer.draw_frame()
 
             frame_idx += 1
+
+    last_pick_failed = False
 
     # Generate sequence!
     with ExitStack() as stack:
@@ -164,7 +172,7 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
             writer.write_scene_data(scene)
 
         # Execute!
-        while failed_picks < 3:
+        while failed_picks < 4:
             # Render once from above
             scene.set_camera_pose(CAMERA_POSES[0])
 
@@ -196,7 +204,16 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
             #Image.fromarray(result.rgb()[:,:,:3].cpu().numpy()).save('/tmp/rgb.png')
             #Image.fromarray(vis.numpy()).save('/tmp/vis.png')
 
-            process_detections(detections)
+            log(f'Items found by perception:')
+            for det in detections:
+                log(f' - {det.name}')
+
+            if bad and last_pick_failed:
+                log('Random pick!')
+                random.shuffle(detections)
+            else:
+                log('Heuristic pick!')
+                process_detections(detections, return_bad_ones=bad)
 
             if len(detections) == 0:
                 log("Empty!")
@@ -209,7 +226,7 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
             coord = result.cam_coordinates()[goalPixel[1], goalPixel[0]].cpu()
 
             # Smooth normal in a small window
-            S = 20
+            S = 10
             norm_miny = max(0, goalPixel[1] - S)
             norm_maxy = min(scene.viewport[1]-1, goalPixel[1] + S)
             norm_minx = max(0, goalPixel[0] - S)
@@ -240,7 +257,7 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
 
             # 2) SUCTION
             log(f"Arrived at object!")
-            sim.enable_suction(100.0, 0.2)
+            sim.enable_suction(40.0, 0.2)
 
             # 3) MOVEMENT: Back out
             move_gripper_to(above[:3,3])
@@ -253,7 +270,12 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
             if len(got_objects) == 0:
                 log(f"Grasp failed, got no object!")
                 failed_picks += 1
+                last_pick_failed = True
                 continue
+
+            last_pick_failed = False
+            if bad:
+                failed_picks = 0
 
             log(f"I got:")
             for obj in got_objects:
@@ -273,6 +295,7 @@ if __name__ == "__main__":
     parser.add_argument('--base', metavar='N', type=int, required=True,
         help='Number of first output sequence')
     parser.add_argument('--viewer', action='store_true')
+    parser.add_argument('--bad', action='store_true')
 
     args = parser.parse_args()
 
@@ -281,4 +304,4 @@ if __name__ == "__main__":
     else:
         sl.init()
 
-    run(out=Path(args.out), start_index=args.base, ibl_path=Path(args.ibl), visualize=args.viewer)
+    run(out=Path(args.out), start_index=args.base, ibl_path=Path(args.ibl), visualize=args.viewer, bad=args.bad)

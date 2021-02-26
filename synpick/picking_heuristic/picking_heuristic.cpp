@@ -854,7 +854,7 @@ cv::Mat_<cv::Vec3b> visualizeDetections(const cv::Mat_<cv::Vec3b>& rgb, const st
     return vis;
 }
 
-void processDetections(std::vector<Detection>& detections)
+void processDetections(std::vector<Detection>& detections, bool returnBadOnes = false)
 {
     printf("Items from perception:\n");
     for(auto& d : detections)
@@ -889,6 +889,10 @@ void processDetections(std::vector<Detection>& detections)
         else
             return aboveA < aboveB;
     });
+
+    if(returnBadOnes)
+        std::reverse(detections.begin(), detections.end());
+
     detections.resize(std::min<std::size_t>(detections.size(), std::max<std::size_t>(3, detections.size() / 2)));
 
     printf("Surviving items after area check:\n");
@@ -985,7 +989,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("cloud"), py::arg("object_sizes"));
 
     m.def("process_detections", &arc_perception::processDetections,
-        py::arg("detections"));
+        py::arg("detections"), py::arg("return_bad_ones")=false);
 
     m.def("visualize_detections", [&](
         at::Tensor& rgb,
