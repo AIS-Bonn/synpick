@@ -70,3 +70,8 @@ def create_scene(ibl_path : Path):
     scene.light_map = sl.LightMap(ibl_path)
 
     return scene
+
+def load_light_maps():
+    return [
+        sl.LightMap(p) for p in Path('external_data/ibl').glob('*/*.ibl')
+    ]

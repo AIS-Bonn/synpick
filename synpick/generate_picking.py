@@ -5,6 +5,7 @@ from synpick.scene import create_scene, CAMERA_POSES
 from synpick.output import Writer
 from synpick.gripper_sim import GripperSim
 from synpick.picking_heuristic import postprocess_segmentation, visualize_detections, postprocess_with_depth, process_detections
+from synpick.color_classes import Colorizer
 
 from pathlib import Path
 from typing import Optional
@@ -161,6 +162,9 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
 
     last_pick_failed = False
 
+    if dump_perception:
+        colorizer = Colorizer(len(OBJECT_INFO))
+
     # Generate sequence!
     with ExitStack() as stack:
 
@@ -200,9 +204,33 @@ def run(out : Path, start_index : int, ibl_path : Path, visualize : bool = False
                 object_sizes=object_sizes,
             )
 
-            #vis = visualize_detections(result.rgb()[:,:,:3], detections, True)
-            #Image.fromarray(result.rgb()[:,:,:3].cpu().numpy()).save('/tmp/rgb.png')
-            #Image.fromarray(vis.numpy()).save('/tmp/vis.png')
+            if dump_perception:
+                vis = visualize_detections(result.rgb()[:,:,:3], detections, grasps=True, labels=False)
+                Image.fromarray(result.rgb()[:,:,:3].cpu().numpy()).save('rgb.jpg')
+
+                for det in detections:
+                    colorizer.colors[det.class_id] = det.color
+
+                colorized = colorizer.colorize(result.class_index()[:,:,0].long()).cpu()
+                Image.fromarray(colorized.permute(1,2,0).numpy()).save('segmentation.png')
+                Image.fromarray(vis.numpy()).save('perception.png')
+
+                with open('clutter.dot', 'w') as f:
+                    f.write('digraph {\n')
+
+                    for i, det in enumerate(detections):
+                        f.write(f'v{det.name} [ label="{i}" color="#{det.color[0]:02X}{det.color[1]:02X}{det.color[2]:02X}" ];\n')
+
+                    f.write(f'\n')
+
+                    for det in detections:
+                        for above in det.objects_above:
+                            f.write(f'v{above} -> v{det.name};\n')
+
+                    f.write('}\n')
+
+                import sys
+                sys.exit(0)
 
             log(f'Items found by perception:')
             for det in detections:
@@ -296,6 +324,7 @@ if __name__ == "__main__":
         help='Number of first output sequence')
     parser.add_argument('--viewer', action='store_true')
     parser.add_argument('--bad', action='store_true')
+    parser.add_argument('--dump-perception', action='store_true')
 
     args = parser.parse_args()
 
@@ -304,4 +333,7 @@ if __name__ == "__main__":
     else:
         sl.init()
 
-    run(out=Path(args.out), start_index=args.base, ibl_path=Path(args.ibl), visualize=args.viewer, bad=args.bad)
+    run(
+        out=Path(args.out), start_index=args.base, ibl_path=Path(args.ibl),
+        visualize=args.viewer, bad=args.bad, dump_perception=args.dump_perception
+    )

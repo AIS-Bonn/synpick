@@ -47,6 +47,7 @@ struct Detection
 {
     std::string object;
     int classID = -1;
+    cv::Scalar color;
 
     cv::Mat_<uint8_t> binMask;
     cv::Point2i centroid;
@@ -240,6 +241,9 @@ std::vector<Detection> postprocessSegmentation(const cv::Mat_<uint8_t>& segmenta
 
     detections.resize(keep);
 
+    for(std::size_t i = 0; i < detections.size(); ++i)
+        detections[i].color = COLORS[i % COLORS.size()];
+
     return detections;
 }
 
@@ -282,7 +286,7 @@ static void trySolution(const graph::Graph& G, const std::vector<graph::EdgeID>&
 
 void postprocessWithDepth(std::vector<Detection>* detections, const cv::Mat_<uint8_t>& segmentation, const cv::Mat_<float>& confidence, const std::vector<std::string>& classes, at::Tensor& cloud, const std::vector<Eigen::Vector3f>& objectSizes)
 {
-    constexpr float LOOK_DIST = 50; // px
+    constexpr float LOOK_DIST = 3; // px
 
     // Compute 3D centroids
     std::vector<std::size_t> centroidCount(classes.size(), 0);
@@ -494,7 +498,7 @@ void postprocessWithDepth(std::vector<Detection>* detections, const cv::Mat_<uin
 //         printf("Object %s is %u above and %u below (%u box, %u oob). Per class:\n", detection.object.c_str(), countAbove, countBelow, boxHit, outOfBounds);
         for(std::size_t i = 0; i < classes.size(); ++i)
         {
-            if(countBelowPerClass[i] < 10)
+            if(countBelowPerClass[i] < 5)
                 continue;
 
             if(i == unknownClass || i == boxClass)
@@ -738,7 +742,7 @@ void postprocessWithDepth(std::vector<Detection>* detections, const cv::Mat_<uin
     }
 }
 
-cv::Mat_<cv::Vec3b> visualizeDetections(const cv::Mat_<cv::Vec3b>& rgb, const std::vector<Detection>& detectionsIn, bool grasps)
+cv::Mat_<cv::Vec3b> visualizeDetections(const cv::Mat_<cv::Vec3b>& rgb, const std::vector<Detection>& detectionsIn, bool grasps, bool labels)
 {
     std::vector<Detection> leftDetections;
     std::vector<Detection> rightDetections;
@@ -751,10 +755,9 @@ cv::Mat_<cv::Vec3b> visualizeDetections(const cv::Mat_<cv::Vec3b>& rgb, const st
             rightDetections.push_back(det);
     }
 
-    cv::Mat_<cv::Vec3b> vis(rgb.rows, rgb.cols + 2000);
+    cv::Mat_<cv::Vec3b> vis(rgb.rows, rgb.cols + 1000);
     vis = cv::Vec3b(255, 255, 255);
-    std::cout << cv::Rect(cv::Point(1000, 0), rgb.size()) << std::endl;
-    rgb.copyTo(vis(cv::Rect(cv::Point(1000, 0), rgb.size())));
+    rgb.copyTo(vis(cv::Rect(cv::Point(500, 0), rgb.size())));
 
     const double FONT_SCALE = 1.0;
     // Render left side
@@ -765,10 +768,10 @@ cv::Mat_<cv::Vec3b> visualizeDetections(const cv::Mat_<cv::Vec3b>& rgb, const st
 
         while(!leftDetections.empty())
         {
-            cv::Point start(800, y + (3*skip)/2);
+            cv::Point start(400, y + (3*skip)/2);
             auto it = std::min_element(leftDetections.begin(), leftDetections.end(), [&](const Detection& a, const Detection& b) {
-                cv::Point2d diff_a = a.centroid + cv::Point(1000, 0) - start;
-                cv::Point2d diff_b = b.centroid + cv::Point(1000, 0)- start;
+                cv::Point2d diff_a = a.centroid + cv::Point(500, 0) - start;
+                cv::Point2d diff_b = b.centroid + cv::Point(500, 0)- start;
 
                 return diff_a.y/diff_a.x < diff_b.y/diff_b.x;
             });
@@ -776,30 +779,33 @@ cv::Mat_<cv::Vec3b> visualizeDetections(const cv::Mat_<cv::Vec3b>& rgb, const st
             Detection det = *it;
             leftDetections.erase(it);
 
-            cv::Scalar color = COLORS[i % COLORS.size()];
+            cv::Scalar color = det.color;
 
-            int baseline;
-            cv::Size size = cv::getTextSize(det.object.c_str(), cv::FONT_HERSHEY_SIMPLEX, FONT_SCALE, 4, &baseline);
-            cv::putText(vis, det.object.c_str(), cv::Point(800 - size.width, y + skip), cv::FONT_HERSHEY_SIMPLEX, FONT_SCALE, cv::Scalar(0, 0, 0), 4);
+            if(labels)
+            {
+                int baseline;
+                cv::Size size = cv::getTextSize(det.object.c_str(), cv::FONT_HERSHEY_SIMPLEX, FONT_SCALE, 4, &baseline);
+                cv::putText(vis, det.object.c_str(), cv::Point(400 - size.width, y + skip), cv::FONT_HERSHEY_SIMPLEX, FONT_SCALE, cv::Scalar(0, 0, 0), 4);
 
-            char buf[256];
+                char buf[256];
 
-            snprintf(buf, sizeof(buf), "conf: %f", det.confidence);
-            size = cv::getTextSize(buf, cv::FONT_HERSHEY_SIMPLEX, FONT_SCALE, 4, &baseline);
+                snprintf(buf, sizeof(buf), "conf: %f", det.confidence);
+                size = cv::getTextSize(buf, cv::FONT_HERSHEY_SIMPLEX, FONT_SCALE, 4, &baseline);
 
-            cv::putText(vis, buf, cv::Point(800 - size.width, y + 2*skip), cv::FONT_HERSHEY_SIMPLEX, FONT_SCALE, cv::Scalar(0, 0, 0), 4);
+                cv::putText(vis, buf, cv::Point(400 - size.width, y + 2*skip), cv::FONT_HERSHEY_SIMPLEX, FONT_SCALE, cv::Scalar(0, 0, 0), 4);
 
-//             snprintf(buf, sizeof(buf), "area: %f", det.visibleAreaFactor);
-//             cv::putText(vis, buf, cv::Point(0, y + 3*skip), cv::FONT_HERSHEY_SIMPLEX, 2, color, 4);
+    //             snprintf(buf, sizeof(buf), "area: %f", det.visibleAreaFactor);
+    //             cv::putText(vis, buf, cv::Point(0, y + 3*skip), cv::FONT_HERSHEY_SIMPLEX, 2, color, 4);
 
-            cv::line(vis, start, det.centroid + cv::Point(1000, 0), color, 2);
+                cv::line(vis, start, det.centroid + cv::Point(500, 0), color, 2);
+            }
 
-            cv::drawContours(vis(cv::Rect(cv::Point(1000, 0), rgb.size())), det.contours, -1, color, 4);
+            cv::drawContours(vis(cv::Rect(cv::Point(500, 0), rgb.size())), det.contours, -1, color, 8);
 
             if(grasps)
             {
-                cv::circle(vis, det.suctionPoint + cv::Point(1000, 0), 10, color, -1);
-                cv::circle(vis, det.polygonCentroid + cv::Point(1000, 0), 5, color, -1);
+                cv::circle(vis, det.suctionPoint + cv::Point(500, 0), 20, color, -1);
+                cv::circle(vis, det.polygonCentroid + cv::Point(500, 0), 10, color, -1);
             }
 
             y += 2.5*skip;
@@ -813,10 +819,10 @@ cv::Mat_<cv::Vec3b> visualizeDetections(const cv::Mat_<cv::Vec3b>& rgb, const st
         const int skip = 30;
         while(!rightDetections.empty())
         {
-            cv::Point start(vis.cols - 1000 + 200, y + (3*skip)/2);
+            cv::Point start(vis.cols - 500 + 100, y + (3*skip)/2);
             auto it = std::max_element(rightDetections.begin(), rightDetections.end(), [&](const Detection& a, const Detection& b) {
-                cv::Point2d diff_a = a.centroid + cv::Point(1000, 0) - start;
-                cv::Point2d diff_b = b.centroid + cv::Point(1000, 0) - start;
+                cv::Point2d diff_a = a.centroid + cv::Point(500, 0) - start;
+                cv::Point2d diff_b = b.centroid + cv::Point(500, 0) - start;
 
                 return diff_a.y/diff_a.x < diff_b.y/diff_b.x;
             });
@@ -824,26 +830,29 @@ cv::Mat_<cv::Vec3b> visualizeDetections(const cv::Mat_<cv::Vec3b>& rgb, const st
             Detection det = *it;
             rightDetections.erase(it);
 
-            cv::Scalar color = COLORS[i % COLORS.size()];
+            cv::Scalar color = det.color;
 
-            cv::putText(vis, det.object.c_str(), cv::Point(vis.cols - 1000 + 200, y + skip), cv::FONT_HERSHEY_SIMPLEX, FONT_SCALE, cv::Scalar(0, 0, 0), 4);
+            if(labels)
+            {
+                cv::putText(vis, det.object.c_str(), cv::Point(vis.cols - 500 + 100, y + skip), cv::FONT_HERSHEY_SIMPLEX, FONT_SCALE, cv::Scalar(0, 0, 0), 4);
 
-            char buf[256];
+                char buf[256];
 
-            snprintf(buf, sizeof(buf), "conf: %f", det.confidence);
-            cv::putText(vis, buf, cv::Point(vis.cols - 1000 + 200, y + 2*skip), cv::FONT_HERSHEY_SIMPLEX, FONT_SCALE, cv::Scalar(0, 0, 0), 4);
+                snprintf(buf, sizeof(buf), "conf: %f", det.confidence);
+                cv::putText(vis, buf, cv::Point(vis.cols - 500 + 100, y + 2*skip), cv::FONT_HERSHEY_SIMPLEX, FONT_SCALE, cv::Scalar(0, 0, 0), 4);
 
-//             snprintf(buf, sizeof(buf), "area: %f", det.visibleAreaFactor);
-//             cv::putText(vis, buf, cv::Point(vis.cols - 1000, y + 3*skip), cv::FONT_HERSHEY_SIMPLEX, 2, color, 4);
+    //             snprintf(buf, sizeof(buf), "area: %f", det.visibleAreaFactor);
+    //             cv::putText(vis, buf, cv::Point(vis.cols - 1000, y + 3*skip), cv::FONT_HERSHEY_SIMPLEX, 2, color, 4);
 
-            cv::line(vis, start, det.centroid + cv::Point(1000, 0), color, 2);
+                cv::line(vis, start, det.centroid + cv::Point(500, 0), color, 2);
+            }
 
-            cv::drawContours(vis(cv::Rect(cv::Point(1000, 0), rgb.size())), det.contours, -1, color, 4);
+            cv::drawContours(vis(cv::Rect(cv::Point(500, 0), rgb.size())), det.contours, -1, color, 8);
 
             if(grasps)
             {
-                cv::circle(vis, det.suctionPoint + cv::Point(1000, 0), 10, color, -1);
-                cv::circle(vis, det.polygonCentroid + cv::Point(1000, 0), 5, color, -1);
+                cv::circle(vis, det.suctionPoint + cv::Point(500, 0), 20, color, -1);
+                cv::circle(vis, det.polygonCentroid + cv::Point(500, 0), 10, color, -1);
             }
 
             y += 2.5*skip;
@@ -851,7 +860,10 @@ cv::Mat_<cv::Vec3b> visualizeDetections(const cv::Mat_<cv::Vec3b>& rgb, const st
         }
     }
 
-    return vis;
+    if(!labels)
+        return vis(cv::Rect(500, 0, rgb.cols, rgb.rows));
+    else
+        return vis;
 }
 
 void processDetections(std::vector<Detection>& detections, bool returnBadOnes = false)
@@ -922,6 +934,15 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         })
         .def_property_readonly("suction_point", [](const arc_perception::Detection& det){
             return torch::tensor({det.suctionPoint.x, det.suctionPoint.y});
+        })
+        .def_property_readonly("class_id", [](const arc_perception::Detection& det){
+            return det.classID;
+        })
+        .def_property_readonly("objects_above", [](const arc_perception::Detection& det){
+            return det.objectsAbove;
+        })
+        .def_property_readonly("color", [](const arc_perception::Detection& det){
+            return torch::tensor({static_cast<uint8_t>(det.color[2]), static_cast<uint8_t>(det.color[1]), static_cast<uint8_t>(det.color[0])});
         })
     ;
     py::bind_vector<std::vector<arc_perception::Detection>>(m, "DetectionList");
@@ -994,27 +1015,30 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("visualize_detections", [&](
         at::Tensor& rgb,
         const std::vector<arc_perception::Detection>& detectionsIn,
-        bool grasps)
+        bool grasps, bool labels)
     {
         auto cpuRGB = rgb.to(at::kByte).cpu().contiguous();
         if(cpuRGB.dim() != 3 || cpuRGB.size(2) != 3)
             throw std::invalid_argument{"RGB tensor must be 3D"};
+
+        cpuRGB = cpuRGB.flip({2});
 
         cv::Mat_<cv::Vec3b> cvRGB(cpuRGB.size(0), cpuRGB.size(1),
             reinterpret_cast<cv::Vec3b*>(cpuRGB.data_ptr<uint8_t>())
         );
 
         cv::Mat_<cv::Vec3b> vis = arc_perception::visualizeDetections(
-            cvRGB, detectionsIn, grasps
+            cvRGB, detectionsIn, grasps, labels
         );
 
         return torch::from_blob(
             reinterpret_cast<uint8_t*>(vis.data),
             {vis.rows, vis.cols, 3},
+            {static_cast<long>(vis.step), 3, 1},
             at::kByte
-        ).clone();
+        ).clone().flip({2});
     },
-        py::arg("rgb"), py::arg("detections"), py::arg("grasps")=true);
+        py::arg("rgb"), py::arg("detections"), py::arg("grasps")=true, py::arg("labels")=true);
 
 }
 
