@@ -42,6 +42,7 @@ OBJECT_INFO = [
 ]
 
 OBJECT_NAMES = [ obj.name for obj in OBJECT_INFO ]
+SYNPICK_DIR = Path(__file__).parent.parent.absolute()
 
 def mesh_flags(info : ObjectInfo):
     if info.flags >= FLAG_CONCAVE:
@@ -50,7 +51,7 @@ def mesh_flags(info : ObjectInfo):
         return sl.Mesh.Flag.PHYSICS_FORCE_CONVEX_HULL
 
 def load_meshes():
-    path = Path('external_data/ycbv_models/models_fine')
+    path = SYNPICK_DIR / Path('external_data/ycbv_models/models_fine')
 
     mesh_files = [ path / f'obj_{i+1:06}.ply' for i in range(21) ]
 
@@ -82,22 +83,22 @@ def get_object(mesh : sl.Mesh, objectInfo : ObjectInfo):
     return obj
 
 def load_tote():
-    tote = sl.Mesh('meshes/tote.glb')
+    tote = sl.Mesh(SYNPICK_DIR / 'meshes/tote.glb')
     tote.class_index = 0
     return tote
 
 def load_gripper():
-    gripper = sl.Mesh('meshes/gripper.glb', flags=sl.Mesh.Flag.PHYSICS_FORCE_CONVEX_HULL)
+    gripper = sl.Mesh(SYNPICK_DIR / 'meshes/gripper.glb', flags=sl.Mesh.Flag.PHYSICS_FORCE_CONVEX_HULL)
     gripper.class_index = 0
     return gripper
 
 def load_gripper_base():
-    gripper = sl.Mesh('meshes/gripper_base.glb', flags=sl.Mesh.Flag.PHYSICS_FORCE_CONVEX_HULL)
+    gripper = sl.Mesh(SYNPICK_DIR / 'meshes/gripper_base.glb', flags=sl.Mesh.Flag.PHYSICS_FORCE_CONVEX_HULL)
     gripper.class_index = 0
     return gripper
 
 def load_gripper_cup():
-    gripper = sl.Mesh('meshes/gripper_cup.glb', flags=sl.Mesh.Flag.PHYSICS_FORCE_CONVEX_HULL)
+    gripper = sl.Mesh(SYNPICK_DIR / 'meshes/gripper_cup.glb', flags=sl.Mesh.Flag.PHYSICS_FORCE_CONVEX_HULL)
     gripper.class_index = 0
     return gripper
 
